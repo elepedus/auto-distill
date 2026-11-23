@@ -119,3 +119,24 @@ About 1.5 hours is deliberately unallocated.
     of a numerically broken path isn't worth the machine time.
   - **Machine now:** GPU reference curves at 2.05M tokens (ternary-TTF with defaults and with best, and fp32 at
     3e-3 with and without the schedule).
+- 2026-11-23 23:25. **Correction to the 23:00 entry.** The ANE gap was mainly an overflow-handling bug, not fp16
+  numerics as such.
+  - The numerics agent (2561608, `results/grad-numerics-2026-11-23.md`) found that layer 0's ds_* (and the
+    dg/dk) outputs overflow. They are token-sum matmuls and the gradient grows toward layer 0. The old finite
+    check looked only at gp_* and dx0, so those infs went straight into Adam. Each overflow it did catch halved
+    the scale, which then underflowed gp_*.
+  - Same settings (`--hyper 1e-3,12.8,1953,0.8 --seed 1`, P=1), 256k tokens:
+
+    | binary | train KL | held-out KL | loss scale |
+    |---|---|---|---|
+    | old (best-s1) | 9.27 | 9.35 | 8–128 |
+    | new, checking every output | 6.55 | 5.40 | 512–2048, 3 overflows |
+
+  - GPU fp32 TTF (tern-def-s0) is 4.94 at 256k and **2.232** at 2.05M tokens. Fixed eval set throughout.
+  - `--grad-prescale` adds per-tensor power-of-two factors, inside one runtime input `f` (separate inputs hit
+    the program's input limit). gzero falls from ~0.4 to ≤ 0.05 in the worst tensor. At 512k: 4.235 vs 4.408
+    baseline, one seed.
+  - **Now:** ANE P=1 base vs prescale × seeds 0–2 at 2.05M with the default settings (to match
+    GPU tern-def); PBT-8 with prescale and without. GPU queue: fp32 references and tern-def seeds 1–2.
+    One ANE job and one GPU job run concurrently, so wall-clock numbers from tonight are not throughput
+    measurements.
