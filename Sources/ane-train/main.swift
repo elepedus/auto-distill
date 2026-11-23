@@ -1,5 +1,5 @@
 // Stage 4: train a tiny ternary LFM2-shaped model from scratch, trunk on the ANE, against bf16 LFM2-350M.
-//   ane-train [--steps 2000] [--frozen-trits]
+//   ane-train [--steps 2000] [--accum 1] [--frozen-trits]
 // The teacher writes the text (a from-scratch student can't yet) and scores it; the student learns the
 // teacher's full next-token distribution (KL). Per step: embedding on the GPU, 4 layers forward on the ANE,
 // head + loss on the GPU, 4 layers backward on the ANE, then TTF updates for the trits and Adam for the
@@ -18,6 +18,7 @@ let T = 256, D = 256, F = 768, H = 4, hd = 64, V = 65536
 let kinds = [false, false, true, false]  // attention layer?
 let steps = CommandLine.arguments.firstIndex(of: "--steps").map { Int(CommandLine.arguments[$0 + 1])! } ?? 2000
 let frozenTrits = CommandLine.arguments.contains("--frozen-trits")  // ablation: only the float parts learn
+let accum = CommandLine.arguments.firstIndex(of: "--accum").map { Int(CommandLine.arguments[$0 + 1])! } ?? 1  // sequences per update
 let shape = LFM2Shape(tokens: T, dim: D, ff: F, heads: H, headDim: hd, ropeBase: 1e6)
 MLXRandom.seed(0)  // same data, init and eval set across runs, so ablations compare like for like
 let theta: Float = 16, leak: Float = 1 - 1.0 / 1000, beta2: Float = 0.95, lr: Float = 2e-3
@@ -59,9 +60,9 @@ final class Ternary {
         acc = MLXArray.zeros([n * k]); rows = MLXArray.zeros([n]); cols = MLXArray.zeros([k])
         eval(trits.write(MLXRandom.randInt(-1 ..< 2, [n * k]).asType(.float16)), scale.sync()!)
     }
-    /// gp: [T, n] output gradient times scale, a: [T, k] input; gpᵀ·a = dL/dtrits. Returns trits moved.
-    func update(gp: MLXArray, a: MLXArray, rho: Float, step t: Int) -> MLXArray {
-        let g = matmul(gp.T, a), g2 = g * g
+    /// g: [n, k] dL/dtrits (gpᵀ·a, averaged over the update's sequences). Returns the number of trits moved.
+    func update(g: MLXArray, rho: Float, step t: Int) -> MLXArray {
+        let g2 = g * g
         rows = beta2 * rows + (1 - beta2) * g2.mean(axis: 1); cols = beta2 * cols + (1 - beta2) * g2.mean(axis: 0)
         let correction = 1 - pow(beta2, Float(t)), r = rows / correction
         let params = concatenated([MLXArray([rho, leak, theta]), r.mean().reshaped(1)])
@@ -163,67 +164,86 @@ var teacherLogp = MLXArray(0)
     }
     return total / Float(evalSet.count)
 }
-print(String(format: "eval kl %.3f at step 0%@", try evaluate(), frozenTrits ? " (trits frozen)" : ""))
-var lossScale: Float = 1024, goodSteps = 0, recent: [Float] = [], timing = [String: Double](), generation = 0.0
+print(String(format: "eval kl %.3f at 0 tokens (accum %d%@)", try evaluate(), accum, frozenTrits ? ", trits frozen" : ""))
+var lossScale: Float = 1024, goodSequences = 0, recent: [Float] = [], timing = [String: Double](), generation = 0.0
+var tokensSeen = 0, nextEval = 64000  // held-out eval every 64k tokens, comparable across --accum
 @MainActor func timed<R>(_ phase: String, _ body: () throws -> R) rethrows -> R {
     let t0 = Date(); defer { timing[phase, default: 0] += Date().timeIntervalSince(t0) }; return try body()
 }
-let warmup = steps / 20
+let warmup = max(1, steps / 20), logEvery = max(1, 25 / accum)
 for step in 1 ... steps {
-    if pool.isEmpty { let t0 = Date(); pool = try generate(256); generation += Date().timeIntervalSince(t0) }
-    let tokens = MLXArray(pool.removeLast())
     // Schedules: TTF step size rho (warm up 0.25 -> 1, cosine to 0.2) and Adam rate (warm up, cosine to 10%).
-    let progress = Float(step) / Float(steps), cosine = 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(steps - warmup)))
+    let cosine = 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, steps - warmup))))
     let rho = step < warmup ? 0.25 + 0.75 * Float(step) / Float(warmup) : 0.2 + 0.8 * cosine
     let rate = lr * (step < warmup ? Float(step) / Float(warmup) : 0.1 + 0.9 * cosine)
-    _ = progress
 
-    timed("teacher") { teacherLogp = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(teacherLogp) }
-    timed("embed") { eval(embedBuffer.write(embedding.value[tokens])) }
-    try timed("ane forward") { for l in layers { _ = try l.fwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
-    let (loss, headGrads) = try timed("head") { () throws -> ([MLXArray], [MLXArray]) in
-        let r = head([try shared(layers[layers.count - 1].fwd, "y").reshaped(T, D), embedding.value, finalNorm.value, teacherLogp])
-        eval(r.0, r.1, topGradient.write(r.1[0] * lossScale))
-        return r
+    // Sum gradients over `accum` sequences in fp32 on the GPU, keyed by the parameter they belong to.
+    var sums = [ObjectIdentifier: MLXArray](), used = 0
+    for _ in 0 ..< accum {
+        if pool.isEmpty { let t0 = Date(); pool = try generate(256); generation += Date().timeIntervalSince(t0) }
+        let tokens = MLXArray(pool.removeLast())
+        tokensSeen += T
+        timed("teacher") { teacherLogp = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(teacherLogp) }
+        timed("embed") { eval(embedBuffer.write(embedding.value[tokens])) }
+        try timed("ane forward") { for l in layers { _ = try l.fwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
+        let (loss, headGrads) = try timed("head") { () throws -> ([MLXArray], [MLXArray]) in
+            let r = head([try shared(layers[layers.count - 1].fwd, "y").reshaped(T, D), embedding.value, finalNorm.value, teacherLogp])
+            eval(r.0, r.1, topGradient.write(r.1[0] * lossScale))
+            return r
+        }
+        try timed("ane backward") { for l in layers.reversed() { _ = try l.bwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
+
+        try timed("accumulate") {
+            let dx0 = try shared(layers[0].bwd, "dx").reshaped(T, D)
+            let gps = try layers.flatMap { l in try l.ternaries.map { try shared(l.bwd, "gp_\($0.name)") } }
+            guard gps.map({ $0.sum() }).reduce(dx0.sum(), { $0 + $1 }).item(Float.self).isFinite else {  // fp16 overflow: skip, shrink
+                lossScale /= 2; goodSequences = 0; print("update \(step): gradient overflow, loss scale -> \(lossScale)"); return
+            }
+            var parts: [(AnyObject, MLXArray)] = [(embedding, headGrads[1].at[tokens].add(dx0 / lossScale)), (finalNorm, headGrads[2])]
+            for l in layers {
+                for t in l.ternaries {
+                    let gp = try shared(l.bwd, "gp_\(t.name)").reshaped(T, t.n) / lossScale
+                    let a = try shared(l.bwd, ["w1": "a_hn", "w3": "a_hn", "w2": "a_act", "o": "a_mix"][t.name] ?? "a_xn").reshaped(T, t.k)
+                    if !frozenTrits { parts.append((t, matmul(gp.T, a))) }  // dL/dtrits
+                    parts.append((t.scale, try shared(l.bwd, "ds_\(t.name)").reshaped(-1) / lossScale))
+                }
+                for (name, p) in l.floats {
+                    let g = try shared(l.bwd, "d" + name) / lossScale  // dg_op, dg_ffn, dg_q, dg_k, dk0..2
+                    parts.append((p, p.heads > 1 ? g.reshaped(H, hd).sum(axis: 0) : g.reshaped(-1)))
+                }
+            }
+            for (owner, g) in parts { sums[ObjectIdentifier(owner)] = sums[ObjectIdentifier(owner)].map { $0 + g } ?? g }
+            eval(Array(sums.values))  // before the next sequence overwrites the ANE's output surfaces
+            recent.append(loss[0].item(Float.self)); used += 1; goodSequences += 1
+            if goodSequences % 200 == 0, lossScale < 65536 { lossScale *= 2 }
+        }
     }
-    try timed("ane backward") { for l in layers.reversed() { _ = try l.bwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
+    guard used > 0 else { continue }
 
     try timed("update") {
-        let dx0 = try shared(layers[0].bwd, "dx").reshaped(T, D)
-        let gps = try layers.flatMap { l in try l.ternaries.map { try shared(l.bwd, "gp_\($0.name)") } }
-        guard gps.map({ $0.sum() }).reduce(dx0.sum(), { $0 + $1 }).item(Float.self).isFinite else {  // fp16 overflow: retry smaller
-            lossScale /= 2; goodSteps = 0; print("step \(step): gradient overflow, loss scale -> \(lossScale)"); return
-        }
-        var pending = [embedding.update(headGrads[1].at[tokens].add(dx0 / lossScale), step: step, rate: rate),
-                       finalNorm.update(headGrads[2], step: step, rate: rate)].compactMap { $0 }
+        func mean(_ owner: AnyObject) -> MLXArray { sums[ObjectIdentifier(owner)]! / Float(used) }
+        var pending = [embedding.update(mean(embedding), step: step, rate: rate), finalNorm.update(mean(finalNorm), step: step, rate: rate)].compactMap { $0 }
         var moved = [MLXArray]()
         for l in layers {
             for t in l.ternaries {
-                let a = try shared(l.bwd, ["w1": "a_hn", "w3": "a_hn", "w2": "a_act", "o": "a_mix"][t.name] ?? "a_xn")
-                if !frozenTrits { moved.append(t.update(gp: try shared(l.bwd, "gp_\(t.name)").reshaped(T, t.n) / lossScale, a: a.reshaped(T, t.k), rho: rho, step: step)) }
-                pending += [t.scale.update(try shared(l.bwd, "ds_\(t.name)").reshaped(-1) / lossScale, step: step, rate: rate)].compactMap { $0 }
+                if !frozenTrits { moved.append(t.update(g: mean(t), rho: rho, step: step)) }
+                pending += [t.scale.update(mean(t.scale), step: step, rate: rate)].compactMap { $0 }
             }
-            for (name, p) in l.floats {
-                var g = try shared(l.bwd, "d" + name) / lossScale  // dg_op, dg_ffn, dg_q, dg_k, dk0..2
-                g = p.heads > 1 ? g.reshaped(H, hd).sum(axis: 0) : g.reshaped(-1)
-                pending += [p.update(g, step: step, rate: rate)].compactMap { $0 }
-            }
+            for p in l.floats.values { pending += [p.update(mean(p), step: step, rate: rate)].compactMap { $0 } }
         }
         let flips = moved.reduce(MLXArray(Float(0)), { $0 + $1 })
         eval(pending + [flips] + layers.flatMap { $0.ternaries.map(\.acc) })
-        recent.append(loss[0].item(Float.self))
-        goodSteps += 1
-        if goodSteps % 200 == 0, lossScale < 65536 { lossScale *= 2 }
-        if step % 25 == 0 || step == 1 {
-            let tokensSeen = Double(step * T), seconds = Date().timeIntervalSince(started)
-            print(String(format: "step %4d  kl %.3f  flips %6.0f  rho %.2f  scale %.0f  %.0f tok/s", step,
-                         recent.reduce(0, +) / Float(recent.count), flips.item(Float.self), rho, lossScale, tokensSeen / seconds))
+        if step % logEvery == 0 || step == 1 {
+            print(String(format: "update %4d  tokens %8d  kl %.3f  flips %6.0f  rho %.2f  scale %.0f  %.0f tok/s", step, tokensSeen,
+                         recent.reduce(0, +) / Float(max(1, recent.count)), flips.item(Float.self), rho, lossScale,
+                         Double(tokensSeen) / Date().timeIntervalSince(started)))
             recent.removeAll()
         }
-        if step % 250 == 0 { print(String(format: "eval kl %.3f at step %d", try evaluate(), step)) }
     }
+    if tokensSeen >= nextEval { print(String(format: "eval kl %.3f at %d tokens", try evaluate(), tokensSeen)); nextEval += 64000 }
 }
 let total = timing.values.reduce(0, +)
-print("time per step (ms): " + timing.sorted { $0.value > $1.value }.map { String(format: "%@ %.1f", $0.key, 1000 * $0.value / Double(steps)) }.joined(separator: ", ")
-      + String(format: "; teacher text generation %.1f", 1000 * generation / Double(steps)))
-print(String(format: "training throughput excluding text generation: %.0f tok/s", Double(steps * T) / total))
+let sequences = Double(tokensSeen / T)
+print("time per sequence (ms): " + timing.sorted { $0.value > $1.value }.map { String(format: "%@ %.1f", $0.key, 1000 * $0.value / sequences) }.joined(separator: ", ")
+      + String(format: "; teacher text generation %.1f", 1000 * generation / sequences))
+print(String(format: "training throughput excluding text generation: %.0f tok/s", Double(tokensSeen) / total))
