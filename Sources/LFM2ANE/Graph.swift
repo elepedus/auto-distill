@@ -68,10 +68,13 @@ final class MILText {
     }
 }
 
+/// Layer shape. `population` runs that many independent models side by side in one program: every tensor
+/// gets a population axis (the channel axis, which matmuls batch over), each member with its own weights.
 public struct LFM2Shape: Sendable {
-    public let tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float
-    public init(tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float) {
+    public let tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float, population: Int
+    public init(tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float, population: Int = 1) {
         self.tokens = tokens; self.dim = dim; self.ff = ff; self.heads = heads; self.headDim = headDim; self.ropeBase = ropeBase
+        self.population = population
     }
 }
 
@@ -82,10 +85,10 @@ public struct LFM2Shape: Sendable {
 /// whose product gpᵀ·a is dL/dtrits, and the float-parameter gradients `ds_*`, `dg_*`, `dk*`.
 public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true) throws
     -> (Program, constants: [String: Tensor]) {
-    let g = MILText(), T = s.tokens, D = s.dim, H = s.heads, hd = s.headDim
+    let g = MILText(), T = s.tokens, D = s.dim, H = s.heads, hd = s.headDim, P = s.population, PH = P * H
     func ones(_ n: Int) -> [Float16] { .init(repeating: 1, count: n) }
-    let onesD = try g.const(ones(D), [1, 1, D, 1])
-    let tokenSum = backward ? try g.const(ones(T), [1, 1, 1, T]) : onesD  // [1, T] @ z sums z over tokens
+    let onesD = try g.const(ones(P * D), [1, P, D, 1])
+    let tokenSum = backward ? try g.const(ones(P * T), [1, P, 1, T]) : onesD  // [1, T] @ z sums z over tokens
     var outputs: [V] = []
     func emit(_ x: V, _ name: String) { outputs.append(g.output(x, name)) }
 
@@ -108,7 +111,7 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     }
     struct Lin { let name: String; let x, w, s, pre, y: V }
     func linear(_ x: V, _ name: String, out: Int) -> Lin {
-        let w = g.input("w_\(name)", [1, 1, out, x.shape[3]]), scale = g.input("s_\(name)", [1, 1, 1, out])
+        let w = g.input("w_\(name)", [1, P, out, x.shape[3]]), scale = g.input("s_\(name)", [1, P, 1, out])
         let pre = g.matmul(x, w, transposeY: true)  // trits in MLX's [out, in] layout
         return Lin(name: name, x: x, w: w, s: scale, pre: pre, y: g.mul(pre, scale))
     }
@@ -119,15 +122,16 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     }
     func sum(_ xs: [V]) -> V { xs.dropFirst().reduce(xs[0], g.add) }
 
-    let x = g.input("x", [1, 1, T, D]), gy = backward ? g.input("gy", [1, 1, T, D]) : x
-    let xn = norm(x, g.input("g_op", [1, 1, 1, D]), ones: onesD)
+    let x = g.input("x", [1, P, T, D]), gy = backward ? g.input("gy", [1, P, T, D]) : x
+    let xn = norm(x, g.input("g_op", [1, P, 1, D]), ones: onesD)
     let r: V, mixerBack: (V) throws -> V  // dL/dr -> dL/dxn
     if attention {
-        func heads(_ z: V) -> V { g.transpose(g.reshape(z, [1, T, H, hd]), [0, 2, 1, 3]) }
-        func merge(_ z: V) -> V { g.reshape(g.transpose(z, [0, 2, 1, 3]), [1, 1, T, H * hd]) }
-        let onesH = try g.const(ones(H * hd), [1, H, hd, 1])
-        var cosT = [Float16](), sinT = [Float16](), rot = [Float16](repeating: 0, count: H * hd * hd)
-        for _ in 0 ..< H {
+        // Heads of all members share the channel axis: [1, P, T, H·hd] <-> [1, P·H, T, hd].
+        func heads(_ z: V) -> V { g.reshape(g.transpose(g.reshape(z, [P, T, H, hd]), [0, 2, 1, 3]), [1, PH, T, hd]) }
+        func merge(_ z: V) -> V { g.reshape(g.transpose(g.reshape(z, [P, H, T, hd]), [0, 2, 1, 3]), [1, P, T, H * hd]) }
+        let onesH = try g.const(ones(PH * hd), [1, PH, hd, 1])
+        var cosT = [Float16](), sinT = [Float16](), rot = [Float16](repeating: 0, count: PH * hd * hd)
+        for _ in 0 ..< PH {
             for t in 0 ..< T {
                 for i in 0 ..< hd {
                     let angle = Float(t) * pow(s.ropeBase, -Float(2 * (i % (hd / 2))) / Float(hd))
@@ -135,23 +139,23 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
                 }
             }
         }
-        for h in 0 ..< H {  // rotate_half(q) = q @ R: column i takes -q[i + hd/2] (first half) or q[i - hd/2]
+        for h in 0 ..< PH {  // rotate_half(q) = q @ R: column i takes -q[i + hd/2] (first half) or q[i - hd/2]
             for i in 0 ..< hd / 2 {
                 rot[h * hd * hd + (i + hd / 2) * hd + i] = -1
                 rot[h * hd * hd + i * hd + (i + hd / 2)] = 1
             }
         }
-        let cosC = try g.const(cosT, [1, H, T, hd]), sinC = try g.const(sinT, [1, H, T, hd])
-        let rotC = try g.const(rot, [1, H, hd, hd])
+        let cosC = try g.const(cosT, [1, PH, T, hd]), sinC = try g.const(sinT, [1, PH, T, hd])
+        let rotC = try g.const(rot, [1, PH, hd, hd])
         var mask = [Float16]()
-        for _ in 0 ..< H { for i in 0 ..< T { for j in 0 ..< T { mask.append(j <= i ? 0 : -30000) } } }
-        let maskC = try g.const(mask, [1, H, T, T]), onesT = try g.const(ones(H * T), [1, H, T, 1])
+        for _ in 0 ..< PH { for i in 0 ..< T { for j in 0 ..< T { mask.append(j <= i ? 0 : -30000) } } }
+        let maskC = try g.const(mask, [1, PH, T, T]), onesT = try g.const(ones(PH * T), [1, PH, T, 1])
         func rope(_ z: V) -> V { g.add(g.mul(z, cosC), g.mul(g.matmul(z, rotC), sinC)) }
 
         // GQA as 16 full heads: the caller duplicates each kv head's weight rows.
         let lq = linear(xn.out, "q", out: H * hd), lk = linear(xn.out, "k", out: H * hd), lv = linear(xn.out, "v", out: H * hd)
-        let qn = norm(heads(lq.y), g.input("g_q", [1, H, 1, hd]), ones: onesH)
-        let kn = norm(heads(lk.y), g.input("g_k", [1, H, 1, hd]), ones: onesH)
+        let qn = norm(heads(lq.y), g.input("g_q", [1, PH, 1, hd]), ones: onesH)
+        let kn = norm(heads(lk.y), g.input("g_k", [1, PH, 1, hd]), ones: onesH)
         let q = rope(qn.out), k = rope(kn.out), v = heads(lv.y)
         let scores = g.add(g.scale(g.matmul(q, k, transposeY: true), 1 / sqrt(Float(hd))), maskC)
         let e = g.unary("exp", g.binary("sub", scores, g.rowMax(scores))), den = g.matmul(e, onesT)
@@ -160,7 +164,7 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
         let lo = linear(merge(o), "o", out: D)
         r = lo.y
         mixerBack = { gr in
-            let headTokens = try g.const(ones(H * T), [1, H, 1, T])
+            let headTokens = try g.const(ones(PH * T), [1, PH, 1, T])
             emit(lo.x, "a_mix")
             let gO = heads(linearBack(lo, gr)), p = g.binary("real_div", e, den)
             let gV = g.matmul(p, gO, transposeX: true), gP = g.matmul(gO, v, transposeY: true)
@@ -177,11 +181,11 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
         func shiftMatrix(_ by: Int, transposed: Bool = false) throws -> V {
             var m = [Float16](repeating: 0, count: T * T)
             for t in by ..< T { if transposed { m[(t - by) * T + t] = 1 } else { m[t * T + t - by] = 1 } }
-            return try g.const(m, [1, 1, T, T])
+            return try g.const(Array([[Float16]](repeating: m, count: P).joined()), [1, P, T, T])
         }
         let bx = g.mul(lb.y, lx.y)
         let shifted = [g.matmul(try shiftMatrix(2), bx), g.matmul(try shiftMatrix(1), bx), bx]
-        let k = (0 ..< 3).map { g.input("k\($0)", [1, 1, 1, D]) }
+        let k = (0 ..< 3).map { g.input("k\($0)", [1, P, 1, D]) }
         let conv = sum((0 ..< 3).map { g.mul(shifted[$0], k[$0]) })
         let lo = linear(g.mul(lc.y, conv), "o", out: D)
         r = lo.y
@@ -195,7 +199,7 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
         }
     }
     let h = g.add(x, r)
-    let hn = norm(h, g.input("g_ffn", [1, 1, 1, D]), ones: onesD)
+    let hn = norm(h, g.input("g_ffn", [1, P, 1, D]), ones: onesD)
     let l1 = linear(hn.out, "w1", out: s.ff), l3 = linear(hn.out, "w3", out: s.ff)
     let silu = g.binary("real_div", l1.y, g.offset(g.unary("exp", g.scale(l1.y, -1)), 1))  // explicit: native silu is inaccurate
     let l2 = linear(g.mul(silu, l3.y), "w2", out: D)

@@ -24,6 +24,7 @@ let package = Package(
         .executableTarget(name: "distill", dependencies: mlx + ["LMLoad"]),
         .target(name: "LFM2ANE", dependencies: mlx + [.product(name: "ANE", package: "swift-ane")]),
         .executableTarget(name: "lfm2-ane", dependencies: mlx + ["LMLoad", "LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
+        .executableTarget(name: "population-probe", dependencies: mlx + ["LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
         .executableTarget(name: "ane-train", dependencies: mlx + ["LMLoad", "LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
         .executableTarget(
             name: "ternary-probe",

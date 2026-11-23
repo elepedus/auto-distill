@@ -1,0 +1,9 @@
+# population-probe: 2026-11-23 19:25:49 +0000, Version 27.2.1 (Build 26B131). Tiny ternary LFM2 layers d=256, ff=768, 4 heads, T=256.
+conv P= 1  fwd   0.80 ms (0.80 ms/member, 1.0x vs solo)  bwd   1.50 ms (1.50 ms/member, 1.0x vs solo)
+conv P= 4  fwd   1.03 ms (0.26 ms/member, 3.1x vs solo) [members vs solo: max rel L2 0.0e+00]  bwd   2.99 ms (0.75 ms/member, 2.0x vs solo) [members vs solo: max rel L2 0.0e+00]
+conv P= 8  fwd   2.08 ms (0.26 ms/member, 3.1x vs solo) [members vs solo: max rel L2 0.0e+00]  bwd   5.53 ms (0.69 ms/member, 2.2x vs solo) [members vs solo: max rel L2 0.0e+00]
+conv P=16  fwd   4.16 ms (0.26 ms/member, 3.1x vs solo) [members vs solo: max rel L2 0.0e+00]  bwd  11.14 ms (0.70 ms/member, 2.2x vs solo) [members vs solo: max rel L2 0.0e+00]
+attn P= 1  fwd   0.57 ms (0.57 ms/member, 1.0x vs solo)  bwd   1.30 ms (1.30 ms/member, 1.0x vs solo)
+attn P= 4  fwd   1.49 ms (0.37 ms/member, 1.5x vs solo) [members vs solo: max rel L2 0.0e+00]  bwd   3.82 ms (0.96 ms/member, 1.4x vs solo) [members vs solo: max rel L2 0.0e+00]
+attn P= 8  fwd   3.24 ms (0.40 ms/member, 1.4x vs solo) [members vs solo: max rel L2 0.0e+00]  bwd   7.95 ms (0.99 ms/member, 1.3x vs solo) [members vs solo: max rel L2 0.0e+00]
+attn P=16  fwd   6.70 ms (0.42 ms/member, 1.4x vs solo) [members vs solo: max rel L2 0.0e+00]  bwd  15.93 ms (1.00 ms/member, 1.3x vs solo) [members vs solo: max rel L2 0.0e+00]

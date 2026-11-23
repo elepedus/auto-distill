@@ -154,3 +154,24 @@ trits until halfway through. Better signal-to-noise does stop the noise flips (n
 the learning rate are all calibrated in updates. They have to be retuned for each tokens-per-update setting, not
 carried over. Accumulation still raises throughput, 5,300 tokens/s against 4,100 excluding text generation,
 because the per-update work is shared.
+
+## `population-probe`: many models in one ANE program
+
+```sh
+swift run -c release population-probe
+```
+
+`LFM2Shape(population: P)` runs P independent models side by side in one ANE program. Every tensor gets a
+population axis: the channel axis, which matmuls batch over. Each member has its own weights. Attention heads of
+all members share that axis.
+
+On an M2 Max, tiny ternary layers (d 256, T 256) compile at P up to 16. Every member's outputs are
+**bit-identical** to running that member alone, forward and backward. The cost per member stops falling at
+about P = 4, where the ANE is saturated:
+
+| layer | solo, fwd / bwd | per member at P ≥ 4, fwd / bwd | speedup per member |
+|---|---|---|---|
+| conv | 0.80 / 1.50 ms | 0.26 / 0.70 ms | 3.1× / 2.2× |
+| attention | 0.57 / 1.30 ms | 0.40 / 1.00 ms | 1.4× / 1.3× |
+
+Receipt: [`results/population-probe-2026-11-23.txt`](results/population-probe-2026-11-23.txt).
