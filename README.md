@@ -90,3 +90,47 @@ How the layer is built for the ANE:
 - **SiLU** is the explicit `a / (1 + exp(-a))`; swift-ane measured the native op as inaccurate.
 - **Constants are inputs.** Several `BLOBFILE` constants in one in-memory MIL program fail to load
   (`verifyBundleAtPath: invalid model`) on macOS 27.2.1; a single one works.
+
+## `ane-train`: training a ternary model on the ANE
+
+```sh
+swift run -c release ane-train [--steps 2000] [--frozen-trits]
+```
+
+Trains a tiny ternary LFM2-shaped student from scratch: d = 256, 4 layers (conv, conv, attention, conv),
+3.4M trits. The teacher is bf16 LFM2-350M, which writes the training text and scores it. Each step:
+- embedding lookup on the GPU;
+- 4 layers forward on the ANE;
+- head and KL loss on the GPU;
+- 4 layers backward on the ANE;
+- a TTF update for the trits and Adam for the float parameters.
+
+Nothing passes through the CPU:
+- **Owned state:** trits and float parameters live in page-aligned buffers we own. Both ANE programs of a
+  layer bind the same buffer, and MLX wraps it.
+- **GPU writes:** Metal kernels write updates straight into those buffers.
+- **Between programs:** activations and gradients chain directly from one program's output IOSurface to the
+  next program's input.
+- **Self-test:** the trainer checks both directions of zero-copy at startup.
+
+First result, 2,000 steps of one 256-token sequence each, KL on 8 held-out teacher sequences:
+
+| step | TTF | trits frozen (only float parts learn) |
+|---|---|---|
+| 0 | 9.70 | 9.70 |
+| 500 | 9.83 | 9.76 |
+| 1,000 | 8.91 | 9.59 |
+| 2,000 | 8.17 | 9.48 |
+
+Receipts: [`results/ane-ttf-2026-11-23.txt`](results/ane-ttf-2026-11-23.txt),
+[`results/ane-frozen-2026-11-23.txt`](results/ane-frozen-2026-11-23.txt).
+
+**The trunk learns, but the update is too noisy.** Each update sees 256 tokens; TTF's paper used 32k. Each
+update is normalised to about ±ρ per entry, so pure noise drives the accumulator to a typical size of
+ρ·√(τ/2) ≈ 22ρ. At ρ near 1 that crosses θ = 16, so trits flip on noise. That matches the curve:
+- **Steps 250–750 (ρ ≈ 1):** flips peak and held-out KL gets worse than the frozen control.
+- **Steps 750–1,250 (ρ 0.85 → 0.6):** learning happens.
+- **Later (ρ < 0.5):** flips almost stop and KL plateaus.
+
+**Speed:** about 90 ms per step, or 2,900 tokens/s overall; 4,600 tokens/s excluding text generation. The
+ANE accounts for 8.8 ms of each step (forward 2.9, backward 5.9); most of the rest is the 350M teacher.

@@ -1,0 +1,105 @@
+# ane-train receipt: 2026-11-23, Apple M2 Max, macOS 27.2.1. Tiny ternary LFM2-shaped student (d 256, 4 layers: conv conv attn conv, 3.4M trits) from scratch vs bf16 LFM2-350M teacher; 1 teacher-written sequence of 256 tokens per step; seed 0.
+compiled 8 ANE programs in 3.7s; 3407872 ternary weights
+eval kl 9.696 at step 0
+step    1  kl 11.219  flips     52  rho 0.26  scale 1024  17 tok/s
+step   25  kl 9.875  flips      2  rho 0.44  scale 1024  395 tok/s
+step   50  kl 9.672  flips      5  rho 0.62  scale 1024  725 tok/s
+step   75  kl 9.711  flips    371  rho 0.81  scale 1024  1008 tok/s
+step  100  kl 9.741  flips   1924  rho 1.00  scale 1024  1254 tok/s
+step  125  kl 8.787  flips    546  rho 1.00  scale 1024  1468 tok/s
+step  150  kl 8.589  flips    687  rho 1.00  scale 1024  1657 tok/s
+step 174: gradient overflow, loss scale -> 512.0
+step  175  kl 8.368  flips      6  rho 1.00  scale 512  1824 tok/s
+step 180: gradient overflow, loss scale -> 256.0
+step  200  kl 9.789  flips      0  rho 0.99  scale 256  1974 tok/s
+step  225  kl 10.304  flips      2  rho 0.99  scale 256  2108 tok/s
+step  250  kl 9.896  flips      1  rho 0.99  scale 256  2229 tok/s
+eval kl 9.595 at step 250
+step  275  kl 9.818  flips     58  rho 0.98  scale 256  1850 tok/s
+step  300  kl 9.308  flips     28  rho 0.98  scale 256  1947 tok/s
+step  325  kl 10.726  flips    379  rho 0.97  scale 256  2037 tok/s
+step  350  kl 10.299  flips    731  rho 0.97  scale 256  2122 tok/s
+step  375  kl 9.070  flips   1557  rho 0.96  scale 256  2201 tok/s
+step 382: gradient overflow, loss scale -> 256.0
+step  400  kl 10.652  flips   1075  rho 0.95  scale 256  2276 tok/s
+step  425  kl 9.946  flips   2828  rho 0.94  scale 256  2346 tok/s
+step  450  kl 9.674  flips   8329  rho 0.93  scale 256  2412 tok/s
+step 474: gradient overflow, loss scale -> 128.0
+step  475  kl 9.695  flips   5339  rho 0.93  scale 128  2474 tok/s
+step  500  kl 9.352  flips   2960  rho 0.92  scale 128  2533 tok/s
+eval kl 9.830 at step 500
+step  525  kl 9.130  flips   1694  rho 0.91  scale 128  2244 tok/s
+step  550  kl 9.291  flips   3275  rho 0.89  scale 128  2297 tok/s
+step  575  kl 9.208  flips   3955  rho 0.88  scale 128  2348 tok/s
+step  600  kl 9.330  flips   3080  rho 0.87  scale 128  2397 tok/s
+step  625  kl 9.661  flips   1460  rho 0.86  scale 128  2444 tok/s
+step  650  kl 8.974  flips   1969  rho 0.85  scale 128  2488 tok/s
+step  675  kl 9.394  flips    466  rho 0.83  scale 256  2531 tok/s
+step 678: gradient overflow, loss scale -> 128.0
+step  700  kl 9.111  flips    758  rho 0.82  scale 128  2573 tok/s
+step  725  kl 9.199  flips   1389  rho 0.80  scale 128  2612 tok/s
+step  750  kl 9.866  flips   2273  rho 0.79  scale 128  2651 tok/s
+eval kl 9.608 at step 750
+step  775  kl 9.080  flips   2252  rho 0.78  scale 128  2425 tok/s
+step  800  kl 9.288  flips    346  rho 0.76  scale 128  2462 tok/s
+step  825  kl 9.695  flips    512  rho 0.75  scale 128  2497 tok/s
+step  850  kl 9.234  flips    161  rho 0.73  scale 128  2530 tok/s
+step  875  kl 9.223  flips    385  rho 0.71  scale 128  2563 tok/s
+step 880: gradient overflow, loss scale -> 128.0
+step  900  kl 9.608  flips    491  rho 0.70  scale 128  2595 tok/s
+step  925  kl 9.501  flips   3796  rho 0.68  scale 128  2626 tok/s
+step  950  kl 8.880  flips    278  rho 0.67  scale 128  2656 tok/s
+step  975  kl 9.598  flips    847  rho 0.65  scale 128  2685 tok/s
+step 1000  kl 8.054  flips    253  rho 0.63  scale 128  2713 tok/s
+eval kl 8.913 at step 1000
+step 1018: gradient overflow, loss scale -> 64.0
+step 1025  kl 8.275  flips    725  rho 0.62  scale 64  2530 tok/s
+step 1050  kl 7.847  flips    107  rho 0.60  scale 64  2557 tok/s
+step 1075  kl 8.357  flips    547  rho 0.58  scale 64  2584 tok/s
+step 1100  kl 8.605  flips    202  rho 0.57  scale 64  2610 tok/s
+step 1125  kl 7.922  flips     12  rho 0.55  scale 64  2635 tok/s
+step 1150  kl 8.016  flips    205  rho 0.53  scale 64  2659 tok/s
+step 1175  kl 8.099  flips    112  rho 0.52  scale 64  2683 tok/s
+step 1200  kl 8.321  flips     64  rho 0.50  scale 64  2707 tok/s
+step 1219: gradient overflow, loss scale -> 64.0
+step 1225  kl 8.031  flips     15  rho 0.49  scale 64  2730 tok/s
+step 1250  kl 8.184  flips     12  rho 0.47  scale 64  2752 tok/s
+eval kl 8.065 at step 1250
+step 1275  kl 8.038  flips     21  rho 0.45  scale 64  2768 tok/s
+step 1300  kl 8.166  flips     45  rho 0.44  scale 64  2619 tok/s
+step 1325  kl 8.552  flips     48  rho 0.42  scale 64  2640 tok/s
+step 1350  kl 6.731  flips    108  rho 0.41  scale 64  2661 tok/s
+step 1375  kl 8.075  flips    155  rho 0.40  scale 64  2682 tok/s
+step 1400  kl 7.295  flips     46  rho 0.38  scale 64  2702 tok/s
+step 1420: gradient overflow, loss scale -> 64.0
+step 1425  kl 7.709  flips     14  rho 0.37  scale 64  2722 tok/s
+step 1450  kl 8.557  flips     25  rho 0.35  scale 64  2741 tok/s
+step 1475  kl 7.193  flips     20  rho 0.34  scale 64  2760 tok/s
+step 1500  kl 7.525  flips     29  rho 0.33  scale 64  2777 tok/s
+eval kl 8.192 at step 1500
+step 1525  kl 6.647  flips     47  rho 0.32  scale 64  2790 tok/s
+step 1550  kl 8.462  flips     47  rho 0.31  scale 64  2646 tok/s
+step 1575  kl 7.717  flips      6  rho 0.29  scale 64  2663 tok/s
+step 1600  kl 8.358  flips     10  rho 0.28  scale 64  2681 tok/s
+step 1621: gradient overflow, loss scale -> 64.0
+step 1625  kl 7.161  flips      6  rho 0.27  scale 64  2698 tok/s
+step 1650  kl 7.074  flips      1  rho 0.27  scale 64  2715 tok/s
+step 1675  kl 8.300  flips     12  rho 0.26  scale 64  2731 tok/s
+step 1700  kl 8.137  flips     38  rho 0.25  scale 64  2747 tok/s
+step 1725  kl 7.638  flips     18  rho 0.24  scale 64  2763 tok/s
+step 1750  kl 7.398  flips    122  rho 0.23  scale 64  2779 tok/s
+eval kl 8.203 at step 1750
+step 1775  kl 7.394  flips      8  rho 0.23  scale 64  2790 tok/s
+step 1800  kl 7.288  flips      9  rho 0.22  scale 64  2675 tok/s
+step 1822: gradient overflow, loss scale -> 64.0
+step 1825  kl 7.548  flips     25  rho 0.22  scale 64  2690 tok/s
+step 1850  kl 6.750  flips      2  rho 0.21  scale 64  2705 tok/s
+step 1875  kl 7.207  flips     14  rho 0.21  scale 64  2720 tok/s
+step 1900  kl 7.702  flips      0  rho 0.21  scale 64  2734 tok/s
+step 1925  kl 7.990  flips      2  rho 0.20  scale 64  2748 tok/s
+step 1950  kl 7.846  flips      5  rho 0.20  scale 64  2762 tok/s
+step 1975  kl 6.788  flips      8  rho 0.20  scale 64  2776 tok/s
+step 2000  kl 7.751  flips  12143  rho 0.20  scale 64  2790 tok/s
+eval kl 8.167 at step 2000
+time per step (ms): teacher 24.7, update 9.0, head 8.1, embed 6.5, ane backward 5.9, ane forward 2.9; teacher text generation 31.6
+training throughput excluding text generation: 4480 tok/s

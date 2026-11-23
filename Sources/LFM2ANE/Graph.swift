@@ -68,14 +68,20 @@ final class MILText {
     }
 }
 
-struct LFM2Shape { let tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float }
+public struct LFM2Shape: Sendable {
+    public let tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float
+    public init(tokens: Int, dim: Int, ff: Int, heads: Int, headDim: Int, ropeBase: Float) {
+        self.tokens = tokens; self.dim = dim; self.ff = ff; self.heads = heads; self.headDim = headDim; self.ropeBase = ropeBase
+    }
+}
 
 /// One LFM2 decoder layer: `h = x + mixer(norm(x))`, `y = h + mlp(norm(h))`. Outputs y, r (mixer), m (mlp).
 ///
 /// With `backward`, the program also takes `gy` = dL/dy, recomputes the forward pass and returns `dx`, plus for
 /// each ternary linear its two gradient factors, input activation `a_*` and output gradient times scale `gp_*`,
 /// whose product gpᵀ·a is dL/dtrits, and the float-parameter gradients `ds_*`, `dg_*`, `dk*`.
-func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false) throws -> (Program, constants: [String: Tensor]) {
+public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true) throws
+    -> (Program, constants: [String: Tensor]) {
     let g = MILText(), T = s.tokens, D = s.dim, H = s.heads, hd = s.headDim
     func ones(_ n: Int) -> [Float16] { .init(repeating: 1, count: n) }
     let onesD = try g.const(ones(D), [1, 1, D, 1])
@@ -196,7 +202,7 @@ func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false) throw
     let y = g.add(h, l2.y)
     emit(y, "y")
     guard backward else {
-        emit(r, "r"); emit(l2.y, "m")
+        if diagnostics { emit(r, "r"); emit(l2.y, "m") }
         return (try g.program(outputs: outputs), g.constants)
     }
     emit(xn.out, "a_xn"); emit(hn.out, "a_hn"); emit(l2.x, "a_act")

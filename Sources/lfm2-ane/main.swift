@@ -5,6 +5,7 @@
 import ANE
 import Foundation
 import IOSurface
+import LFM2ANE
 import LMLoad
 import MLX
 import MLXNN
@@ -67,18 +68,6 @@ print("residual-stream max|h| per layer input: " + hidden.map { String(format: "
 func ternary(_ w: MLXArray) -> (trits: MLXArray, scale: MLXArray) {
     let s = abs(w).mean(axis: 1, keepDims: true)
     return (clip(round(w / s), min: -1, max: 1), s.reshaped(-1))
-}
-
-/// Zero-copy MLX view of an ANE IOSurface binding, honouring the compiler's strides.
-func view(_ b: SurfaceBinding) -> MLXArray {
-    let flat = MLXArray(rawPointer: IOSurfaceGetBaseAddress(b.surface), [IOSurfaceGetAllocSize(b.surface) / 2], dtype: .float16) { _ = b }
-    let l = b.layout
-    return asStrided(flat, [l.shape.batches, l.shape.channels, l.shape.height, l.shape.width],
-                     strides: [l.batchStride / 2, l.planeStride / 2, l.rowStride / 2, 1], offset: b.startOffset / 2)
-}
-func tensor(_ a: MLXArray, _ dims: [Int]) throws -> Tensor {
-    try Tensor(shape: TensorShape(batches: dims[0], channels: dims[1], height: dims[2], width: dims[3]),
-               values: a.asType(.float16).asArray(Float16.self))
 }
 
 func cosine(_ a: MLXArray, _ b: MLXArray) -> Float { ((a * b).sum() / sqrt((a * a).sum() * (b * b).sum())).item(Float.self) }
