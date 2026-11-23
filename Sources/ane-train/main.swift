@@ -29,8 +29,10 @@ let shape = LFM2Shape(tokens: T, dim: D, ff: F, heads: H, headDim: hd, ropeBase:
 let beta2: Float = 0.95
 let seed = Int(option("seed") ?? "0")!
 let fixedScale = CommandLine.arguments.contains("--fixed-scale")  // never halve or double the loss scale
+let prescale = CommandLine.arguments.contains("--grad-prescale")  // per-tensor power-of-two gradient scales inside the ANE backward
+var kExp = [String: [Int]](), gseen = [String: MLXArray](), dxSeen: Float = 0  // prescale state, below
 let evalCount = Int(option("eval") ?? "8")!
-MLXRandom.seed(UInt64(seed))  // same data, init and eval set across runs
+MLXRandom.seed(UInt64(seed))  // init and training data follow --seed; the eval set is fixed (seed 424242, below)
 
 // --jsonl PATH: one JSON object per line, flushed. Non-finite numbers become null.
 let jsonl = option("jsonl").flatMap { path -> FileHandle? in
@@ -170,7 +172,7 @@ let allParams: [Param] = [embedding, finalNorm] + layers.flatMap { l in l.ternar
                                     layout: .compilerLayout(s.layout), retaining: producer, access: .readOnly)
 }
 @MainActor func compile(_ i: Int, backward: Bool, x: ExternalInputBinding, gy: ExternalInputBinding?) throws -> Model {
-    let (program, constants) = try layerProgram(shape, attention: layers[i].attention, backward: backward, diagnostics: false)
+    let (program, constants) = try layerProgram(shape, attention: layers[i].attention, backward: backward, diagnostics: false, prescale: prescale)
     var bindings = ["x": x]
     if let gy { bindings["gy"] = gy }
     for t in layers[i].ternaries { bindings["w_\(t.name)"] = try t.trits.binding(); bindings["s_\(t.name)"] = try t.scale.buffer!.binding() }
@@ -205,8 +207,10 @@ let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
 @MainActor func teacherLogProbs(_ tokens: MLXArray) -> MLXArray {
     let t = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(t); return t
 }
+MLXRandom.seed(424242)  // the held-out set is the same for every --seed
 let evalSet = try generate(evalCount).map { MLXArray($0) }  // held out: never trained on
 let evalTargets = evalSet.map(teacherLogProbs)
+MLXRandom.seed(UInt64(seed))  // training data from here on
 var pool: [[Int32]] = []
 
 // Head and loss on the GPU for all members: logits = rmsnorm(h)·Eᵀ (tied), KL(teacher || member) per token.
@@ -223,6 +227,15 @@ let head = valueAndGrad({ (a: [MLXArray]) -> [MLXArray] in  // a = [h, E, final 
 func scatterRows(_ dx: MLXArray, _ tokens: MLXArray) -> MLXArray { MLXArray.zeros([P, V, D]).at[0..., tokens].add(dx) }
 
 @MainActor func shared(_ model: Model, _ name: String) throws -> MLXArray { view(try output(model, name)).asType(.float32) }
+/// Every backward output, top layer first: (layer, name, nonfinite count, max |finite value|).
+@MainActor func overflowScan() -> [(Int, String, Int, Float)] {
+    layers.indices.reversed().flatMap { i in
+        ((try? layers[i].bwd.surfaceBindings()) ?? []).filter { $0.role == .output }.map { b -> (Int, String, Int, Float) in
+            let a = view(b).asType(.float32), ok = (a - a) .== 0
+            return (i, String(b.name.split(separator: "@")[0]), (a.size - ok.asType(.int32).sum().item(Int.self)), MLX.where(ok, abs(a), 0).max().item(Float.self))
+        }
+    }
+}
 @MainActor func forward(_ tokens: MLXArray) throws -> MLXArray {  // final hidden states [P, T, D]
     eval(embedBuffer.write(embedding.value.take(tokens, axis: 1)))
     for l in layers { _ = try l.fwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) }
@@ -267,10 +280,50 @@ var ranking = Array(0 ..< P)  // best first, from the last eval
 }
 
 var lossScale: Float = Float(option("loss-scale") ?? "1024")!, goodSequences = 0, timing = [String: Double](), generation = 0.0
-var gzero = [Float](repeating: 0, count: P), gmax = gzero, dxzero = gzero
+var gzero = [Float](repeating: 0, count: P), gmax = gzero, dxzero = gzero, gzmax = gzero
 var tokensSeen = 0, nextRound = roundTokens, recent = MLXArray.zeros([P]), recentCount = 0
 @MainActor func timed<R>(_ phase: String, _ body: () throws -> R) rethrows -> R {
     let t0 = Date(); defer { timing[phase, default: 0] += Date().timeIntervalSince(t0) }; return try body()
+}
+// --grad-prescale: output `name` of layer i's backward is multiplied by loss scale x 2^k[i.name][member] (an fp16
+// runtime constant in the program, so k can change without a recompile); the trainer divides it out in fp32.
+// k stays in [-14, 14] because 2^k must itself be an fp16 normal number.
+func key(_ i: Int, _ name: String) -> String { "\(i).\(name)" }
+@MainActor func pushFactors(_ i: Int) throws {
+    let names = prescaleNames(attention: layers[i].attention, heads: H)
+    let values = (0 ..< P).flatMap { p in names.flatMap { [Float16](repeating: Float16(pow(2, Float(kExp[key(i, $0.name)]![p]))), count: $0.width) } }
+    try layers[i].bwd.update(inputs: ["f": try Tensor(shape: TensorShape(batches: 1, channels: P, height: 1, width: values.count / P), values: values)])
+}
+/// Gradient output `name` of layer i as fp32 [P, ...] with the loss scale and its 2^k divided out; tracks its max.
+@MainActor func gradient(_ i: Int, _ name: String) throws -> MLXArray {
+    let raw = try shared(layers[i].bwd, name).reshaped(P, -1)
+    guard prescale else { return raw / lossScale }
+    let d = MLXArray((0 ..< P).map { lossScale * pow(2, Float(kExp[key(i, name)]![$0])) }).reshaped(P, 1)
+    gseen[key(i, name)] = maximum(gseen[key(i, name)] ?? MLXArray.zeros([P]), (abs(raw).max(axis: 1, keepDims: true) / d).reshaped(P))
+    return raw / d
+}
+/// Loss scale to `new`, with every k lowered by the same factor so the gradient outputs keep their size.
+@MainActor func setLossScale(_ new: Float) throws {
+    let shift = Int(log2(new / lossScale).rounded()); lossScale = new
+    guard prescale, shift != 0 else { return }
+    for k in kExp.keys { kExp[k] = kExp[k]!.map { min(14, max(-14, $0 - shift)) } }
+    for i in layers.indices { try pushFactors(i) }
+}
+/// Every 50 updates (and at steps 1, 2, 4, 8, ...): k so the largest observed gradient lands near 2^11; the loss scale likewise for dx0, within [256, 65536].
+@MainActor func adaptPrescale(_ step: Int) throws {  // aims at 2^9 while step < 50: a single sequence says little about later ones
+    if dxSeen > 0 { lossScale = min(65536, max(256, lossScale * pow(2, min(2, max(-2, log2(2048 / dxSeen).rounded()))))) }
+    dxSeen = 0
+    for (k, seen) in gseen {
+        kExp[k] = zip(kExp[k]!, seen.asArray(Float.self)).map { old, g in g > 0 ? min(14, max(-14, Int(log2((step < 50 ? 512 : 2048) / (g * lossScale)).rounded()))) : old }
+    }
+    gseen = [:]
+    for i in layers.indices { try pushFactors(i) }
+}
+if prescale {
+    for (i, l) in layers.enumerated() {
+        for t in l.ternaries { for n in ["gp_", "ds_"] { kExp[key(i, n + t.name)] = [Int](repeating: 0, count: P) } }
+        for n in l.floats.keys { kExp[key(i, "d" + n)] = [Int](repeating: 0, count: P) }
+    }
 }
 report(try evaluate(), tokens: 0)
 let warmup = max(1, updates / 20), logEvery = max(1, 50 / accum)
@@ -300,27 +353,41 @@ for step in 1 ... updates {
         try timed("accumulate") {
             let dx0 = try shared(layers[0].bwd, "dx").reshaped(P, T, D)
             let gps = try layers.flatMap { l in try l.ternaries.map { try shared(l.bwd, "gp_\($0.name)") } }
-            guard !finite(gps.map { $0.reshaped(P, -1) } + [dx0]).contains(false) else {  // fp16 gradient overflow: skip, shrink
-                if !fixedScale { lossScale = max(1, lossScale / 2) }
-                goodSequences = 0; print("update \(step): gradient overflow, loss scale -> \(lossScale)")
-                emit("{\"type\":\"overflow\",\"update\":\(step),\"scale\":\(lossScale)}"); return
+            let dss = try layers.flatMap { l in try l.ternaries.map { try shared(l.bwd, "ds_\($0.name)") } }
+            let dgs = try layers.flatMap { l in try l.floats.keys.map { try shared(l.bwd, "d" + $0) } }
+            guard !finite((gps + dss + dgs).map { $0.reshaped(P, -1) } + [dx0]).contains(false) else {  // fp16 gradient overflow: skip, shrink
+                let scan = overflowScan(), bad = scan.filter { $0.2 > 0 }.map { "L\($0.0).\($0.1)" }
+                let finiteMax = scan.filter { $0.2 == 0 }.map { "L\($0.0).\($0.1)=\(String(format: "%.3g", $0.3))" }
+                // The first layer (top down) with a nonfinite output is the culprit; below it, everything inherits its dx.
+                let culprit = scan.filter { $0.2 > 0 }.map { $0.0 }.first.map { c in scan.filter { $0.0 == c && $0.2 > 0 }.map(\.1) } ?? []
+                let top = scan.first { $0.2 > 0 }?.0 ?? 0
+                for name in culprit where prescale && kExp[key(top, name)] != nil { kExp[key(top, name)] = kExp[key(top, name)]!.map { max(-14, $0 - 4) } }
+                if !fixedScale, !prescale || culprit.contains(where: { kExp[key(top, $0)] == nil }) { try setLossScale(max(prescale ? 256 : 1, lossScale / 2)) }
+                if prescale { for i in layers.indices { try pushFactors(i) } }
+                goodSequences = 0
+                print("update \(step): gradient overflow, loss scale -> \(lossScale)\n    bad: \(bad.joined(separator: " "))\n    max finite: \(finiteMax.joined(separator: " "))")
+                emit("{\"type\":\"overflow\",\"update\":\(step),\"scale\":\(lossScale),\"bad\":[\(bad.map { "\"\($0)\"" }.joined(separator: ","))],\"max\":{"
+                     + scan.filter { $0.2 == 0 }.map { "\"L\($0.0).\($0.1)\":\(num($0.3))" }.joined(separator: ",") + "}}")
+                return
             }
+            dxSeen = max(dxSeen, prescale ? abs(dx0).max().item(Float.self) : 0)
             if step % logEvery == 0 || step == 1 {  // gradient diagnostics per member, from the raw fp16 outputs
                 let zeros = gps.map { ($0.reshaped(P, -1) .== 0).asType(.float32).sum(axis: 1) }.reduce(MLXArray.zeros([P]), +)
                 gzero = (zeros / Float(gps.map { $0.size / P }.reduce(0, +))).asArray(Float.self)
+                gzmax = gps.map { ($0.reshaped(P, -1) .== 0).asType(.float32).mean(axis: 1) }.reduce(MLXArray.zeros([P]), { maximum($0, $1) }).asArray(Float.self)
                 gmax = gps.map { abs($0.reshaped(P, -1)).max(axis: 1) }.reduce(MLXArray.zeros([P]), { maximum($0, $1) }).asArray(Float.self)
                 dxzero = (dx0.reshaped(P, -1) .== 0).asType(.float32).mean(axis: 1).asArray(Float.self)
             }
             var parts: [(AnyObject, MLXArray)] = [(embedding, headGrads[1] + scatterRows(dx0 / lossScale, tokens)), (finalNorm, headGrads[2])]
-            for l in layers {
+            for (i, l) in layers.enumerated() {
                 for t in l.ternaries {
-                    let gp = try shared(l.bwd, "gp_\(t.name)").reshaped(P, T, t.n) / lossScale
+                    let gp = try gradient(i, "gp_\(t.name)").reshaped(P, T, t.n)
                     let a = try shared(l.bwd, ["w1": "a_hn", "w3": "a_hn", "w2": "a_act", "o": "a_mix"][t.name] ?? "a_xn").reshaped(P, T, t.k)
                     if !frozenTrits { parts.append((t, matmul(gp.transposed(0, 2, 1), a))) }  // dL/dtrits [P, n, k]
-                    parts.append((t.scale, try shared(l.bwd, "ds_\(t.name)").reshaped(P, t.n) / lossScale))
+                    parts.append((t.scale, try gradient(i, "ds_\(t.name)").reshaped(P, t.n)))
                 }
                 for (name, p) in l.floats {
-                    let g = try shared(l.bwd, "d" + name) / lossScale  // dg_op, dg_ffn, dg_q, dg_k, dk0..2
+                    let g = try gradient(i, "d" + name)  // dg_op, dg_ffn, dg_q, dg_k, dk0..2
                     parts.append((p, p.heads > 1 ? g.reshaped(P, H, hd).sum(axis: 1) : g.reshaped(P, -1)))
                 }
             }
@@ -328,9 +395,10 @@ for step in 1 ... updates {
             recent = recent + losses[1]
             eval(Array(sums.values) + [recent])  // before the next sequence overwrites the ANE's output surfaces
             used += 1; recentCount += 1; goodSequences += 1
-            if goodSequences % 200 == 0, lossScale < 65536, !fixedScale { lossScale *= 2 }
+            if goodSequences % 200 == 0, lossScale < 65536, !fixedScale, !prescale { lossScale *= 2 }
         }
     }
+    if prescale, !fixedScale, step & (step - 1) == 0 || step % 50 == 0 { try adaptPrescale(step) }  // also at steps 1, 2, 4, ...: the first updates change fastest
     let flips = used == 0 ? MLXArray.zeros([P]) : timed("update") { () -> MLXArray in
         func mean(_ owner: AnyObject) -> MLXArray { sums[ObjectIdentifier(owner)]! / Float(used) }
         var pending = allParams.compactMap { p in p.update(mean(p), step: step, rate: rate) }
@@ -346,8 +414,8 @@ for step in 1 ... updates {
         let kl = (recent / Float(max(1, recentCount))).asArray(Float.self), f = flips.asArray(Float.self)
         print(String(format: "update %5d  tokens %8d  train kl best %.3f median %.3f  flips median %.0f  scale %.0f  %.0f tok/s per member",
                      step, tokensSeen, kl.min()!, kl.sorted()[P / 2], f.sorted()[P / 2], lossScale, Double(tokensSeen) / Date().timeIntervalSince(started)))
-        print(String(format: "    gzero %.2f..%.2f  gmax %.3g..%.3g  dxzero %.2f..%.2f", gzero.min()!, gzero.max()!, gmax.min()!, gmax.max()!, dxzero.min()!, dxzero.max()!))
-        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":\(nums(kl)),\"flips\":\(nums(f)),\"scale\":\(lossScale),\"gzero\":\(nums(gzero)),\"gmax\":\(nums(gmax)),\"dxzero\":\(nums(dxzero))}")
+        print(String(format: "    gzero %.2f..%.2f (worst tensor %.2f)  gmax %.3g..%.3g  dxzero %.2f..%.2f", gzero.min()!, gzero.max()!, gzmax.max()!, gmax.min()!, gmax.max()!, dxzero.min()!, dxzero.max()!))
+        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":\(nums(kl)),\"flips\":\(nums(f)),\"scale\":\(lossScale),\"gzero\":\(nums(gzero)),\"gzmax\":\(nums(gzmax)),\"gmax\":\(nums(gmax)),\"dxzero\":\(nums(dxzero))}")
         recent = MLXArray.zeros([P]); recentCount = 0
     }
     if tokensSeen >= nextRound || step == updates {
