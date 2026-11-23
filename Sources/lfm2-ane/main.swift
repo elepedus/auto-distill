@@ -13,6 +13,7 @@ import Tokenizers
 
 let T = 256
 let text = try String(contentsOf: URL(filePath: CommandLine.arguments[1]), encoding: .utf8)
+let prescale = CommandLine.arguments.contains("--grad-prescale")  // run the backward with every gradient output scaled by 8, then divide it out
 let layers = CommandLine.arguments.dropFirst(2).compactMap(Int.init)
 let (model, dir) = try await loadLLM("LiquidAI/LFM2-350M")
 let tokenizer = try await AutoTokenizer.from(modelFolder: dir)
@@ -104,15 +105,19 @@ for i in layers.isEmpty ? [0, 2, 14, 15] : layers {
 
     for backward in [false, true] {
         let started = Date()
-        let (program, constants) = try layerProgram(shape, attention: attention, backward: backward)
+        let (program, constants) = try layerProgram(shape, attention: attention, backward: backward, prescale: prescale)
         let ane = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 2 << 30))
         defer { try? ane.close() }
         let names = Set(ane.inputs.map(\.name))
-        _ = try ane.prepare(inputs: inputs.merging(constants) { $1 }.filter { names.contains($0.key) })  // the one upload
+        let eight = try constants.filter { $0.key.hasPrefix("f_") }.mapValues { try Tensor(shape: $0.shape, values: [Float16](repeating: 8, count: $0.shape.channels)) }
+        _ = try ane.prepare(inputs: inputs.merging(constants) { $1 }.merging(eight) { $1 }.filter { names.contains($0.key) })  // the one upload
         let compiled = Date()
         let surfaces = try ane.surfaceBindings()
         let observation = try ane.evaluatePrepared(readOutputs: false, poisonOutputs: true)
-        func shared(_ name: String) -> MLXArray { view(surfaces.first { $0.name == name || $0.name.hasPrefix(name + "@") }!).asType(.float32) }
+        func shared(_ name: String) -> MLXArray {
+            let out = view(surfaces.first { $0.name == name || $0.name.hasPrefix(name + "@") }!).asType(.float32)
+            return prescale && ["gp_", "ds_", "dg_", "dk"].contains { name.hasPrefix($0) } ? out / 8 : out
+        }
 
         // Reference from the same bytes: effective weight = trits * scale, rebuilt from the shared surfaces.
         let x = shared("x").reshaped(1, T, 1024)

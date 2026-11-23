@@ -32,8 +32,8 @@ final class MILText {
     }
     /// A constant as a runtime input. Several BLOBFILE constants in one in-memory program fail to
     /// load ("verifyBundleAtPath: invalid model") on macOS 27.2; one works, inputs always work.
-    func const(_ values: [Float16], _ shape: [Int]) throws -> V {
-        let name = "c\(constants.count)"
+    func const(_ values: [Float16], _ shape: [Int], name: String? = nil) throws -> V {
+        let name = name ?? "c\(constants.count)"
         constants[name] = try Tensor(shape: TensorShape(batches: shape[0], channels: shape[1], height: shape[2], width: shape[3]), values: values)
         return input(name, shape)
     }
@@ -83,13 +83,25 @@ public struct LFM2Shape: Sendable {
 /// With `backward`, the program also takes `gy` = dL/dy, recomputes the forward pass and returns `dx`, plus for
 /// each ternary linear its two gradient factors, input activation `a_*` and output gradient times scale `gp_*`,
 /// whose product gpᵀ·a is dL/dtrits, and the float-parameter gradients `ds_*`, `dg_*`, `dk*`.
-public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true) throws
+///
+/// With `prescale`, each of those gradient outputs is multiplied by its own runtime constant `f_<output>` (default 1,
+/// shape [1, P, 1, width of that output], or [1, P·H, 1, headDim] for dg_q/dg_k), applied to the upstream gradient before any reduction.
+public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true, prescale: Bool = false) throws
     -> (Program, constants: [String: Tensor]) {
     let g = MILText(), T = s.tokens, D = s.dim, H = s.heads, hd = s.headDim, P = s.population, PH = P * H
     func ones(_ n: Int) -> [Float16] { .init(repeating: 1, count: n) }
     let onesD = try g.const(ones(P * D), [1, P, D, 1])
     let tokenSum = backward ? try g.const(ones(P * T), [1, P, 1, T]) : onesD  // [1, T] @ z sums z over tokens
     var outputs: [V] = []
+    var factor = [String: V]()  // output name -> its prescale constant
+    if prescale && backward {  // [1, members, 1, width of the output]: broadcasting a [1,1,1,1] constant against a linked gy fails on the ANE
+        let width = ["q": H * hd, "k": H * hd, "v": H * hd, "w1": s.ff, "w3": s.ff]
+        let linears = (attention ? ["q", "k", "v", "o"] : ["b", "c", "x", "o"]) + ["w1", "w3", "w2"]
+        var all = linears.flatMap { [("gp_" + $0, P, width[$0] ?? D), ("ds_" + $0, P, width[$0] ?? D)] } + [("dg_op", P, D), ("dg_ffn", P, D)]
+        all += attention ? [("dg_q", PH, hd), ("dg_k", PH, hd)] : (0 ..< 3).map { ("dk\($0)", P, D) }
+        for (name, channels, w) in all { factor[name] = try g.const(ones(channels * w), [1, channels, 1, w], name: "f_" + name) }
+    }
+    func scaled(_ x: V, _ f: V?) -> V { f.map { g.mul(x, $0) } ?? x }
     func emit(_ x: V, _ name: String) { outputs.append(g.output(x, name)) }
 
     // RMSNorm as xs / rms(xs) with xs = x / max|x|: no finite input can overflow the squares, and the sum
@@ -103,11 +115,11 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
         return Norm(out: g.mul(xhat, gamma), xhat: xhat, r: r, m: m, gamma: gamma, ones: ones)
     }
     // d/dx of gamma·x·rs, rs = 1/sqrt(mean(x²) + eps) = r/m:  rs·(gxhat − xhat·mean(gxhat·xhat)).
-    func normBack(_ n: Norm, _ gout: V, tokens: V) -> (gx: V, dgamma: V) {
+    func normBack(_ n: Norm, _ gout: V, tokens: V, prescale f: V? = nil) -> (gx: V, dgamma: V) {
         let gxhat = g.mul(gout, n.gamma)
         let dot = g.scale(g.matmul(g.mul(gxhat, n.xhat), n.ones), 1 / Float(n.xhat.shape[3]))
         let gx = g.mul(g.binary("real_div", n.r, n.m), g.binary("sub", gxhat, g.mul(n.xhat, dot)))
-        return (gx, g.matmul(tokens, g.mul(gout, n.xhat)))
+        return (gx, g.matmul(tokens, g.mul(scaled(gout, f), n.xhat)))
     }
     struct Lin { let name: String; let x, w, s, pre, y: V }
     func linear(_ x: V, _ name: String, out: Int) -> Lin {
@@ -117,7 +129,8 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     }
     func linearBack(_ l: Lin, _ gy: V) -> V {  // emits gp_ and ds_, returns dL/dx (an exact ternary matmul)
         let gp = g.mul(gy, l.s)
-        emit(gp, "gp_\(l.name)"); emit(g.matmul(tokenSum, g.mul(gy, l.pre)), "ds_\(l.name)")
+        emit(factor["gp_" + l.name].map { g.mul(gy, g.mul(l.s, $0)) } ?? gp, "gp_\(l.name)")  // gy·(s·f): neither a premature underflow nor an overflow
+        emit(g.matmul(tokenSum, g.mul(scaled(gy, factor["ds_" + l.name]), l.pre)), "ds_\(l.name)")
         return g.matmul(gp, l.w)
     }
     func sum(_ xs: [V]) -> V { xs.dropFirst().reduce(xs[0], g.add) }
@@ -170,8 +183,8 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
             let gV = g.matmul(p, gO, transposeX: true), gP = g.matmul(gO, v, transposeY: true)
             let gS = g.scale(g.mul(p, g.binary("sub", gP, g.matmul(g.mul(gP, p), onesT))), 1 / sqrt(Float(hd)))
             func ropeBack(_ gz: V) -> V { g.binary("sub", g.mul(gz, cosC), g.matmul(g.mul(gz, sinC), rotC)) }  // Rᵀ = −R
-            let (gq, dgq) = normBack(qn, ropeBack(g.matmul(gS, k)), tokens: headTokens)
-            let (gk, dgk) = normBack(kn, ropeBack(g.matmul(gS, q, transposeX: true)), tokens: headTokens)
+            let (gq, dgq) = normBack(qn, ropeBack(g.matmul(gS, k)), tokens: headTokens, prescale: factor["dg_q"])
+            let (gk, dgk) = normBack(kn, ropeBack(g.matmul(gS, q, transposeX: true)), tokens: headTokens, prescale: factor["dg_k"])
             emit(dgq, "dg_q"); emit(dgk, "dg_k")
             return sum([linearBack(lq, merge(gq)), linearBack(lk, merge(gk)), linearBack(lv, merge(gV))])
         }
@@ -192,7 +205,7 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
         mixerBack = { gr in
             emit(lo.x, "a_mix")
             let gz = linearBack(lo, gr), gconv = g.mul(gz, lc.y)
-            for j in 0 ..< 3 { emit(g.matmul(tokenSum, g.mul(gconv, shifted[j])), "dk\(j)") }
+            for j in 0 ..< 3 { emit(g.matmul(tokenSum, g.mul(scaled(gconv, factor["dk\(j)"]), shifted[j])), "dk\(j)") }
             let gbx = sum([g.matmul(try shiftMatrix(2, transposed: true), g.mul(gconv, k[0])),
                            g.matmul(try shiftMatrix(1, transposed: true), g.mul(gconv, k[1])), g.mul(gconv, k[2])])
             return sum([linearBack(lb, g.mul(gbx, lx.y)), linearBack(lx, g.mul(gbx, lb.y)), linearBack(lc, g.mul(gz, conv))])
@@ -214,10 +227,10 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     let sig = g.divide(1, by: g.offset(g.unary("exp", g.scale(l1.y, -1)), 1))
     let dsilu = g.add(sig, g.mul(g.mul(l1.y, sig), g.offset(g.scale(sig, -1), 1)))  // σ(1 + a(1 − σ))
     let ghn = g.add(linearBack(l1, g.mul(g.mul(gact, l3.y), dsilu)), linearBack(l3, g.mul(gact, silu)))
-    let (ghNorm, dgFfn) = normBack(hn, ghn, tokens: tokenSum)
+    let (ghNorm, dgFfn) = normBack(hn, ghn, tokens: tokenSum, prescale: factor["dg_ffn"])
     emit(dgFfn, "dg_ffn")
     let gh = g.add(gy, ghNorm)
-    let (gxNorm, dgOp) = normBack(xn, try mixerBack(gh), tokens: tokenSum)
+    let (gxNorm, dgOp) = normBack(xn, try mixerBack(gh), tokens: tokenSum, prescale: factor["dg_op"])
     emit(dgOp, "dg_op")
     emit(g.add(gh, gxNorm), "dx")
     return (try g.program(outputs: outputs), g.constants)
