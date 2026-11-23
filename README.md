@@ -94,7 +94,7 @@ How the layer is built for the ANE:
 ## `ane-train`: training a ternary model on the ANE
 
 ```sh
-swift run -c release ane-train [--steps 2000] [--accum 1] [--frozen-trits]
+swift run -c release ane-train [--population 8] [--tokens 2048000] [--round 256000] [--accum 1] [--frozen-trits]
 ```
 
 Trains a tiny ternary LFM2-shaped student from scratch: d = 256, 4 layers (conv, conv, attention, conv),

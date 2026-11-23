@@ -59,21 +59,23 @@ private let writeKernel = MLXFast.metalKernel(
         if (i == 0) done[0] = 1;
         """)
 
-/// One TTF step for a ternary matrix, in place: leaky accumulation of the Adam-normalised step, then a trit
-/// moves one level where the accumulator reaches theta, which is spent. params = [rho, leak, theta, mean(R)].
-/// Outputs the new accumulator and a 0/1 map of moved trits; the trits are rewritten in the shared buffer.
+/// One TTF step for P members' [N, K] ternary matrices, in place: leaky accumulation of the Adam-normalised
+/// step, then a trit moves one level where the accumulator reaches theta, which is spent. Per member p,
+/// params[4p ..< 4p+4] = [rho, leak, theta, mean(row moment)]. Template args N, K. Outputs the new accumulator
+/// and a 0/1 map of moved trits; the trits are rewritten in the shared buffer.
 public let ttfKernel = MLXFast.metalKernel(
     name: "ttf_fire", inputNames: ["g", "acc", "rowv", "colv", "params", "trits"], outputNames: ["acc_out", "moved"],
     source: """
         uint idx = thread_position_in_grid.x;
         if (idx >= g_shape[0]) return;
-        uint k = colv_shape[0], i = idx / k, j = idx % k;
-        float v = rowv[i] * colv[j] / params[3];
-        float a = params[1] * acc[idx] - params[0] * g[idx] / (metal::sqrt(v) + 1e-20f);
+        uint p = idx / (N * K), local = idx % (N * K), i = local / K, j = local % K;
+        device const float* q = params + 4 * p;
+        float v = rowv[p * N + i] * colv[p * K + j] / q[3];
+        float a = q[1] * acc[idx] - q[0] * g[idx] / (metal::sqrt(v) + 1e-20f);
         float t = float(trits[idx]), d = 0.0f;
-        if (a >= params[2] && t < 1.0f) d = 1.0f;
-        else if (a <= -params[2] && t > -1.0f) d = -1.0f;
+        if (a >= q[2] && t < 1.0f) d = 1.0f;
+        else if (a <= -q[2] && t > -1.0f) d = -1.0f;
         if (d != 0.0f) ((device half*)trits)[idx] = half(t + d);
-        acc_out[idx] = a - params[2] * d;
+        acc_out[idx] = a - q[2] * d;
         moved[idx] = d != 0.0f ? 1.0f : 0.0f;
         """)
