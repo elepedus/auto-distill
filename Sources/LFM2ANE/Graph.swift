@@ -57,6 +57,7 @@ final class MILText {
     func floor(_ x: V, _ value: Float) -> V { op("maximum", "x = \(x.name), y = \(half(value))", x.shape) }
     func rsqrt(_ x: V) -> V { op("rsqrt", "epsilon = \(half(0x1p-24)), x = \(x.name)", x.shape) }
     func reshape(_ x: V, _ shape: [Int]) -> V { op("reshape", "shape = \(ints(shape)), x = \(x.name)", shape) }
+    func slice(_ x: V, begin: [Int], size: [Int]) -> V { op("slice_by_size", "x = \(x.name), begin = \(ints(begin)), size = \(ints(size))", size) }
     func transpose(_ x: V, _ perm: [Int]) -> V { op("transpose", "perm = \(ints(perm)), x = \(x.name)", perm.map { x.shape[$0] }) }
     func output(_ x: V, _ name: String) -> V { op("identity", "x = \(x.name)", x.shape, as: name) }
 
@@ -84,8 +85,13 @@ public struct LFM2Shape: Sendable {
 /// each ternary linear its two gradient factors, input activation `a_*` and output gradient times scale `gp_*`,
 /// whose product gpᵀ·a is dL/dtrits, and the float-parameter gradients `ds_*`, `dg_*`, `dk*`.
 ///
-/// With `prescale`, each of those gradient outputs is multiplied by its own runtime constant `f_<output>` (default 1,
-/// shape [1, P, 1, width of that output], or [1, P·H, 1, headDim] for dg_q/dg_k), applied to the upstream gradient before any reduction.
+/// Names and widths (columns per member) of the prescale factors, packed into the one runtime input `f` [1, P, 1, sum of widths].
+public func prescaleNames(attention: Bool, heads: Int) -> [(name: String, width: Int)] {
+    let linears = (attention ? ["q", "k", "v", "o"] : ["b", "c", "x", "o"]) + ["w1", "w3", "w2"]
+    return linears.flatMap { [("gp_" + $0, 1), ("ds_" + $0, 1)] } + [("dg_op", 1), ("dg_ffn", 1)]
+        + (attention ? [("dg_q", heads), ("dg_k", heads)] : (0 ..< 3).map { ("dk\($0)", 1) })
+}
+/// With `prescale`, each of those gradient outputs is multiplied by its own slice of the runtime input `f` (default 1), applied to the upstream gradient before any reduction.
 public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true, prescale: Bool = false) throws
     -> (Program, constants: [String: Tensor]) {
     let g = MILText(), T = s.tokens, D = s.dim, H = s.heads, hd = s.headDim, P = s.population, PH = P * H
@@ -94,12 +100,14 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     let tokenSum = backward ? try g.const(ones(P * T), [1, P, 1, T]) : onesD  // [1, T] @ z sums z over tokens
     var outputs: [V] = []
     var factor = [String: V]()  // output name -> its prescale constant
-    if prescale && backward {  // [1, members, 1, width of the output]: broadcasting a [1,1,1,1] constant against a linked gy fails on the ANE
-        let width = ["q": H * hd, "k": H * hd, "v": H * hd, "w1": s.ff, "w3": s.ff]
-        let linears = (attention ? ["q", "k", "v", "o"] : ["b", "c", "x", "o"]) + ["w1", "w3", "w2"]
-        var all = linears.flatMap { [("gp_" + $0, P, width[$0] ?? D), ("ds_" + $0, P, width[$0] ?? D)] } + [("dg_op", P, D), ("dg_ffn", P, D)]
-        all += attention ? [("dg_q", PH, hd), ("dg_k", PH, hd)] : (0 ..< 3).map { ("dk\($0)", P, D) }
-        for (name, channels, w) in all { factor[name] = try g.const(ones(channels * w), [1, channels, 1, w], name: "f_" + name) }
+    if prescale && backward {  // all factors travel in one input: the ANE refuses programs with more than 32 inputs
+        let packed = try g.const(ones(P * prescaleNames(attention: attention, heads: H).map(\.width).reduce(0, +)), [1, P, 1, prescaleNames(attention: attention, heads: H).map(\.width).reduce(0, +)], name: "f")
+        var offset = 0
+        for (name, width) in prescaleNames(attention: attention, heads: H) {
+            let part = g.slice(packed, begin: [0, 0, 0, offset], size: [1, P, 1, width])
+            factor[name] = width == 1 ? part : g.reshape(part, [1, PH, 1, 1])  // dg_q, dg_k: one factor per member and head
+            offset += width
+        }
     }
     func scaled(_ x: V, _ f: V?) -> V { f.map { g.mul(x, $0) } ?? x }
     func emit(_ x: V, _ name: String) { outputs.append(g.output(x, name)) }

@@ -109,7 +109,7 @@ for i in layers.isEmpty ? [0, 2, 14, 15] : layers {
         let ane = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 2 << 30))
         defer { try? ane.close() }
         let names = Set(ane.inputs.map(\.name))
-        let eight = try constants.filter { $0.key.hasPrefix("f_") }.mapValues { try Tensor(shape: $0.shape, values: [Float16](repeating: 8, count: $0.shape.channels)) }
+        let eight = try constants.filter { $0.key.hasPrefix("f") && $0.key.count == 1 }.mapValues { try Tensor(shape: $0.shape, values: [Float16](repeating: 8, count: $0.shape.channels * $0.shape.width)) }
         _ = try ane.prepare(inputs: inputs.merging(constants) { $1 }.merging(eight) { $1 }.filter { names.contains($0.key) })  // the one upload
         let compiled = Date()
         let surfaces = try ane.surfaceBindings()

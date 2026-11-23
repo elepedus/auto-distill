@@ -30,7 +30,7 @@ let beta2: Float = 0.95
 let seed = Int(option("seed") ?? "0")!
 let fixedScale = CommandLine.arguments.contains("--fixed-scale")  // never halve or double the loss scale
 let prescale = CommandLine.arguments.contains("--grad-prescale")  // per-tensor power-of-two gradient scales inside the ANE backward
-var factorWidth = [String: Int](), kExp = [String: [Int]](), gseen = [String: MLXArray](), dxSeen: Float = 0  // prescale state, below
+var kExp = [String: [Int]](), gseen = [String: MLXArray](), dxSeen: Float = 0  // prescale state, below
 let evalCount = Int(option("eval") ?? "8")!
 MLXRandom.seed(UInt64(seed))  // init and training data follow --seed; the eval set is fixed (seed 424242, below)
 
@@ -178,7 +178,6 @@ let allParams: [Param] = [embedding, finalNorm] + layers.flatMap { l in l.ternar
     for t in layers[i].ternaries { bindings["w_\(t.name)"] = try t.trits.binding(); bindings["s_\(t.name)"] = try t.scale.buffer!.binding() }
     for (name, p) in layers[i].floats { bindings[name] = try p.buffer!.binding() }
     let model = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 4 << 30), inputBindings: bindings)
-    for (name, t) in constants where name.hasPrefix("f_") { factorWidth[key(i, String(name.dropFirst(2)))] = t.shape.width }
     _ = try model.prepareUpdating(inputs: constants)
     return model
 }
@@ -291,12 +290,9 @@ var tokensSeen = 0, nextRound = roundTokens, recent = MLXArray.zeros([P]), recen
 // k stays in [-14, 14] because 2^k must itself be an fp16 normal number.
 func key(_ i: Int, _ name: String) -> String { "\(i).\(name)" }
 @MainActor func pushFactors(_ i: Int) throws {
-    let updates = try kExp.filter { $0.key.hasPrefix("\(i).") }.map { (k, e) -> (String, Tensor) in
-        let name = String(k.dropFirst("\(i).".count)), copies = name == "dg_q" || name == "dg_k" ? H : 1
-        let values = e.flatMap { [Float16](repeating: Float16(pow(2, Float($0))), count: copies * factorWidth[k]!) }
-        return ("f_" + name, try Tensor(shape: TensorShape(batches: 1, channels: e.count * copies, height: 1, width: factorWidth[k]!), values: values))
-    }
-    try layers[i].bwd.update(inputs: Dictionary(uniqueKeysWithValues: updates))
+    let names = prescaleNames(attention: layers[i].attention, heads: H)
+    let values = (0 ..< P).flatMap { p in names.flatMap { [Float16](repeating: Float16(pow(2, Float(kExp[key(i, $0.name)]![p]))), count: $0.width) } }
+    try layers[i].bwd.update(inputs: ["f": try Tensor(shape: TensorShape(batches: 1, channels: P, height: 1, width: values.count / P), values: values)])
 }
 /// Gradient output `name` of layer i as fp32 [P, ...] with the loss scale and its 2^k divided out; tracks its max.
 @MainActor func gradient(_ i: Int, _ name: String) throws -> MLXArray {
@@ -313,12 +309,12 @@ func key(_ i: Int, _ name: String) -> String { "\(i).\(name)" }
     for k in kExp.keys { kExp[k] = kExp[k]!.map { min(14, max(-14, $0 - shift)) } }
     for i in layers.indices { try pushFactors(i) }
 }
-/// Every 50 updates: k so the largest observed gradient lands near 2^11; the loss scale likewise for dx0, within [256, 65536].
-@MainActor func adaptPrescale() throws {
+/// Every 50 updates (and at steps 1, 2, 4, 8, ...): k so the largest observed gradient lands near 2^11; the loss scale likewise for dx0, within [256, 65536].
+@MainActor func adaptPrescale(_ step: Int) throws {  // aims at 2^9 while step < 50: a single sequence says little about later ones
     if dxSeen > 0 { lossScale = min(65536, max(256, lossScale * pow(2, min(2, max(-2, log2(2048 / dxSeen).rounded()))))) }
     dxSeen = 0
     for (k, seen) in gseen {
-        kExp[k] = zip(kExp[k]!, seen.asArray(Float.self)).map { old, g in g > 0 ? min(14, max(-14, Int(log2(2048 / (g * lossScale)).rounded()))) : old }
+        kExp[k] = zip(kExp[k]!, seen.asArray(Float.self)).map { old, g in g > 0 ? min(14, max(-14, Int(log2((step < 50 ? 512 : 2048) / (g * lossScale)).rounded()))) : old }
     }
     gseen = [:]
     for i in layers.indices { try pushFactors(i) }
@@ -352,7 +348,7 @@ for step in 1 ... updates {
             let r = head([h, embedding.value, finalNorm.value, target])
             eval(r.0, r.1, topGradient.write(r.1[0] * lossScale)); return r
         }
-        try timed("backward") { for l in layers.reversed() { _ = try l.bwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
+        try timed("backward") { for (li, l) in layers.enumerated().reversed() { if ProcessInfo.processInfo.environment["DBG"] != nil { print("bwd \(li) step \(step)") }; _ = try l.bwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
 
         try timed("accumulate") {
             let dx0 = try shared(layers[0].bwd, "dx").reshaped(P, T, D)
@@ -402,7 +398,7 @@ for step in 1 ... updates {
             if goodSequences % 200 == 0, lossScale < 65536, !fixedScale, !prescale { lossScale *= 2 }
         }
     }
-    if prescale, !fixedScale, step == 1 || step % 50 == 0 { try adaptPrescale() }
+    if prescale, !fixedScale, step & (step - 1) == 0 || step % 50 == 0 { try adaptPrescale(step) }  // also at steps 1, 2, 4, ...: the first updates change fastest
     let flips = used == 0 ? MLXArray.zeros([P]) : timed("update") { () -> MLXArray in
         func mean(_ owner: AnyObject) -> MLXArray { sums[ObjectIdentifier(owner)]! / Float(used) }
         var pending = allParams.compactMap { p in p.update(mean(p), step: step, rate: rate) }
