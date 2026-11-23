@@ -1,7 +1,12 @@
 // Float GPU baseline for ane-train: the same LFM2-shaped student (d 256, conv/conv/attn/conv, tied head), plain fp32
 // weights, Adam on everything, MLX autodiff, same teacher-generated data and held-out KL eval.
-//   float-train [--tokens 2048000] [--round 256000] [--lr 1e-3] [--seed 0] [--eval 8] [--jsonl PATH]
+//   float-train [--tokens 2048000] [--round 256000] [--lr 1e-3] [--seed 0] [--eval 8] [--jsonl PATH] [--schedule]
+//               [--ternary [--hyper lr,theta,tau,rho]]
+// --ternary: every linear ane-train makes ternary is trits x per-row scale (fp32 autodiff gives dL/dtrit, trits trained by the
+// same TTF kernel as ane-train, scales/embedding/norms/taps by Adam); schedules are ane-train's. --schedule: ane-train's Adam
+// warm-up + cosine on plain float too.
 import Foundation
+import LFM2ANE
 import LMLoad
 import MLX
 import MLXLLM
@@ -12,7 +17,10 @@ func option(_ name: String) -> String? { CommandLine.arguments.firstIndex(of: "-
 let T = 256, D = 256, F = 768, H = 4, hd = 64, V = 65536
 let kinds = [false, false, true, false]  // attention layer?
 let tokenBudget = Int(option("tokens") ?? "2048000")!, roundTokens = Int(option("round") ?? "256000")!
-let lr = Float(option("lr") ?? "1e-3")!, seed = Int(option("seed") ?? "0")!, evalCount = Int(option("eval") ?? "8")!
+let ternary = CommandLine.arguments.contains("--ternary"), scheduled = ternary || CommandLine.arguments.contains("--schedule")
+let hyp = (option("hyper") ?? "2e-3,16,1000,1").split(separator: ",").map { Float($0)! }  // lr, theta, tau, rho
+let lr = ternary ? hyp[0] : Float(option("lr") ?? "1e-3")!, theta = hyp[1], tau = hyp[2], rhoScale = hyp[3], beta2: Float = 0.95
+let seed = Int(option("seed") ?? "0")!, evalCount = Int(option("eval") ?? "8")!
 let updates = tokenBudget / T
 
 let jsonl = option("jsonl").flatMap { path -> FileHandle? in
@@ -24,8 +32,27 @@ func emit(_ line: String) { try? jsonl?.write(contentsOf: Data((line + "\n").utf
 
 // Parameters, flat: [embed, final gain] then per layer
 //   conv:  g_op g_ffn b c x o k0 k1 k2 w1 w3 w2     attn: g_op g_ffn q k v o g_q g_k w1 w3 w2
-func initParams() -> [MLXArray] {
-    func lin(_ n: Int, _ k: Int) -> MLXArray { MLXRandom.normal([n, k]) / sqrt(Float(k)) }  // ane-train: trits x scale, std 1/sqrt(k)
+let paramCount = 49
+/// Indices in the flat parameter list of the linears that are ternary in ane-train.
+func ternaryIndices() -> [Int] {
+    var out = [Int](), i = 2
+    for attention in [false, false, true, false] {
+        let ffn: Int = i + (attention ? 8 : 9)
+        out += [i + 2, i + 3, i + 4, i + 5, ffn, ffn + 1, ffn + 2]
+        i = ffn + 3
+    }
+    return out
+}
+/// Replaces each ternary linear's per-row scale [n] by trits [n, k] x scale.
+func compose(_ p: [MLXArray], _ trits: [MLXArray]) -> [MLXArray] {
+    var p = p
+    for (j, i) in ternaryIndices().enumerated() { p[i] = trits[j] * p[i].expandedDimensions(axis: 1) }
+    return p
+}
+func initParams(ternary: Bool) -> [MLXArray] {
+    func lin(_ n: Int, _ k: Int) -> MLXArray {  // ane-train: trits x scale, scale 1/sqrt(2k/3); float baseline: std 1/sqrt(k)
+        ternary ? MLXArray.full([n], values: MLXArray(1 / sqrt(Float(k) * 2 / 3))) : MLXRandom.normal([n, k]) / sqrt(Float(k))
+    }
     var p = [MLXRandom.normal([65536, 256]) * 0.02, MLXArray.ones([256])]
     for attention in [false, false, true, false] {
         p += [MLXArray.ones([256]), MLXArray.ones([256])]
@@ -100,17 +127,45 @@ print("eval set checksum: \(evalRaw.flatMap { $0 }.reduce(0) { ($0 &* 31 &+ Int(
 MLXRandom.seed(UInt64(seed))
 var pool: [[Int32]] = []
 
-var params = initParams()
+var params = initParams(ternary: ternary)
 eval(params)
 let count = params.reduce(0) { $0 + $1.size }
-print("float-train: \(count) parameters; \(updates) updates of \(T) tokens; lr \(lr)")
+print("float-train: \(count) parameters; \(updates) updates of \(T) tokens; lr \(lr)" + (ternary ? "; ternary TTF theta \(theta) tau \(tau) rho x \(rhoScale)" : "") + (scheduled ? "; scheduled" : ""))
+
+// Ternary state: trits live in fp16 shared buffers (ttfKernel updates them in place); MLX sees them as fp32 arguments.
+final class Trits {
+    let n: Int, k: Int, buffer: SharedBuffer
+    var acc: MLXArray, rows: MLXArray, cols: MLXArray
+    init(n: Int, k: Int) {
+        self.n = n; self.k = k; buffer = SharedBuffer([1, 1, n, k])
+        acc = MLXArray.zeros([n * k]); rows = MLXArray.zeros([1, n]); cols = MLXArray.zeros([1, k])
+        eval(buffer.write(MLXRandom.randInt(-1 ..< 2, [n * k]).asType(.float16)))
+    }
+    var value: MLXArray { buffer.array.reshaped(n, k).asType(.float32) }
+    /// g [n, k] = dL/dtrit. Returns the number of trits moved.
+    func update(g: MLXArray, rho: Float, leak: Float, theta: Float, step t: Int) -> MLXArray {
+        let g2 = g * g
+        rows = beta2 * rows + (1 - beta2) * g2.mean(axis: 1).reshaped(1, n); cols = beta2 * cols + (1 - beta2) * g2.mean(axis: 0).reshaped(1, k)
+        let correction = 1 - pow(beta2, Float(t)), r = rows / correction
+        let params = stacked([MLXArray(rho), MLXArray(leak), MLXArray(theta), r.mean()], axis: 0)
+        let out = ttfKernel([g.reshaped(-1), acc, r.reshaped(-1), (cols / correction).reshaped(-1), params, buffer.array],
+                            template: [("N", n), ("K", k)], grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
+                            outputShapes: [[n * k], [n * k]], outputDTypes: [.float32, .float32])
+        acc = out[0]
+        return out[1].sum()
+    }
+}
+let tritState: [Trits] = ternary ? (0 ..< 4).flatMap { _ in [(256, 256), (256, 256), (256, 256), (256, 256), (F, D), (F, D), (D, F)] }.map { Trits(n: $0.0, k: $0.1) } : []
 var m = params.map { zeros(like: $0) }, v = m
 
-let lossGrad = valueAndGrad({ (a: [MLXArray]) -> [MLXArray] in [klLoss(Array(a.dropLast(2)), a[a.count - 2], a[a.count - 1])] },
-                            argumentNumbers: Array(0 ..< params.count))
+// a = params (49; ternary linears hold their scale [n]) + trits (0 or 28, fp32) + [tokens, target]; grads for all but the last two.
+let lossGrad = valueAndGrad({ (a: [MLXArray]) -> [MLXArray] in
+    let p = Array(a[0 ..< 49]), trits = Array(a[49 ..< a.count - 2])
+    return [klLoss(trits.isEmpty ? p : compose(p, trits), a[a.count - 2], a[a.count - 1])]
+}, argumentNumbers: Array(0 ..< params.count + tritState.count))
 @MainActor func evaluate() -> Float {
     var total = MLXArray(Float(0))
-    for (tokens, target) in zip(evalSet, evalTargets) { total = total + klLoss(params, tokens, target); eval(total) }
+    for (tokens, target) in zip(evalSet, evalTargets) { total = total + klLoss(ternary ? compose(params, tritState.map(\.value)) : params, tokens, target); eval(total) }
     return (total / Float(evalSet.count)).item(Float.self)
 }
 @MainActor func report(_ kl: Float, tokens: Int) {
@@ -119,7 +174,8 @@ let lossGrad = valueAndGrad({ (a: [MLXArray]) -> [MLXArray] in [klLoss(Array(a.d
 }
 
 let started = Date()
-var tokensSeen = 0, nextRound = roundTokens, recent = 0.0, recentCount = 0, generation = 0.0, working = 0.0
+let warmup = max(1, updates / 20)
+var tokensSeen = 0, nextRound = roundTokens, recent = 0.0, recentCount = 0, flipsRecent: Float = 0, generation = 0.0, working = 0.0
 report(evaluate(), tokens: 0)
 for step in 1 ... updates {
     if pool.isEmpty { let t0 = Date(); pool = try generate(256); generation += Date().timeIntervalSince(t0) }
@@ -127,20 +183,28 @@ for step in 1 ... updates {
     tokensSeen += T
     let t0 = Date()
     let target = teacherLogProbs(tokens)
-    let (loss, grads) = lossGrad(params + [tokens, target])
+    let (loss, grads) = lossGrad(params + tritState.map(\.value) + [tokens, target])
+    // ane-train schedules: rho warm-up 0.25 -> 1 then cosine to 0.2 (times rhoScale); Adam rate warm-up then cosine to 0.1.
+    let cosine = 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, updates - warmup))))
+    let rhoNow = (step < warmup ? 0.25 + 0.75 * Float(step) / Float(warmup) : 0.2 + 0.8 * cosine) * rhoScale
+    let rate = scheduled ? lr * (step < warmup ? Float(step) / Float(warmup) : 0.1 + 0.9 * cosine) : lr
     let b1 = pow(0.9, Float(step)), b2 = pow(0.999, Float(step))
     for j in params.indices {
         m[j] = 0.9 * m[j] + 0.1 * grads[j]; v[j] = 0.999 * v[j] + 0.001 * grads[j] * grads[j]
-        params[j] = params[j] - lr * (m[j] / (1 - b1)) / (sqrt(v[j] / (1 - b2)) + 1e-8)
+        params[j] = params[j] - rate * (m[j] / (1 - b1)) / (sqrt(v[j] / (1 - b2)) + 1e-8)
     }
-    eval(params + m + v + loss)
+    var moved = MLXArray(Float(0))
+    for (j, t) in tritState.enumerated() { moved = moved + t.update(g: grads[params.count + j], rho: rhoNow, leak: 1 - 1 / tau, theta: theta, step: step) }
+    eval(params + m + v + [loss[0], moved] + tritState.map(\.acc))
+    flipsRecent += moved.item(Float.self)
     working += Date().timeIntervalSince(t0)
     recent += Double(loss[0].item(Float.self)); recentCount += 1
     if step % 25 == 0 || step == 1 {
         let kl = Float(recent / Double(recentCount))
-        print(String(format: "update %5d  tokens %8d  train kl %.3f  %.0f tok/s", step, tokensSeen, kl, Double(tokensSeen) / Date().timeIntervalSince(started)))
-        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":[\(num(kl))]}")
-        recent = 0; recentCount = 0
+        let flipsMean = flipsRecent / Float(recentCount)  // trits moved per update, as ane-train's flips
+        print(String(format: "update %5d  tokens %8d  train kl %.3f  flips %.0f  %.0f tok/s", step, tokensSeen, kl, flipsMean, Double(tokensSeen) / Date().timeIntervalSince(started)))
+        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":[\(num(kl))],\"flips\":[\(num(flipsMean))]}")
+        flipsRecent = 0; recent = 0; recentCount = 0
     }
     if tokensSeen >= nextRound || step == updates { nextRound += roundTokens; report(evaluate(), tokens: tokensSeen) }
 }
