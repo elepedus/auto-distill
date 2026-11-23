@@ -228,6 +228,26 @@ func scatterRows(_ dx: MLXArray, _ tokens: MLXArray) -> MLXArray { MLXArray.zero
     }
 }
 
+/// Per member, whether every value in these [P, ...] arrays is finite.
+@MainActor func finite(_ xs: [MLXArray]) -> [Bool] {
+    let s = xs.map { $0.reshaped(P, -1).sum(axis: 1) }.reduce(MLXArray.zeros([P]), { $0 + $1 })
+    return ((s - s) .== 0).asArray(Bool.self)
+}
+/// Slot q takes over member source[q]'s full state: weights, trits, optimiser and TTF state.
+@MainActor func adopt(_ source: [Int]) {
+    let index = MLXArray(source.map(Int32.init))
+    var pending = allParams.compactMap { $0.select(index) } + layers.flatMap { $0.ternaries.flatMap { $0.select(index) } }
+    pending += layers.flatMap { $0.ternaries.flatMap { [$0.acc, $0.rows, $0.cols] } } + allParams.flatMap { [$0.value, $0.m, $0.v] }
+    eval(pending)
+}
+var ranking = Array(0 ..< P)  // best first, from the last eval
+/// A member whose forward pass is no longer finite has diverged: it becomes a copy of the best healthy member.
+@MainActor func replaceDiverged(_ alive: [Bool]) {
+    guard let best = ranking.first(where: { alive[$0] }) else { fatalError("every member diverged") }
+    adopt((0 ..< P).map { alive[$0] ? $0 : best })
+    for p in 0 ..< P where !alive[p] { hyper[p] = perturbed(hyper[best]); print("  m\(p) diverged; now a copy of m\(best), perturbed") }
+}
+
 var lossScale: Float = 1024, goodSequences = 0, timing = [String: Double](), generation = 0.0
 var tokensSeen = 0, nextRound = roundTokens, recent = MLXArray.zeros([P]), recentCount = 0
 @MainActor func timed<R>(_ phase: String, _ body: () throws -> R) rethrows -> R {
@@ -250,6 +270,8 @@ for step in 1 ... updates {
         tokensSeen += T
         let target = timed("teacher") { teacherLogProbs(tokens) }
         let h = try timed("forward") { try forward(tokens) }
+        let alive = finite([h])
+        if alive.contains(false) { replaceDiverged(alive); continue }  // ponytail: with --accum > 1 the slot keeps this update's earlier sums
         let (losses, headGrads) = timed("head") { () -> ([MLXArray], [MLXArray]) in
             let r = head([h, embedding.value, finalNorm.value, target])
             eval(r.0, r.1, topGradient.write(r.1[0] * lossScale)); return r
@@ -259,8 +281,8 @@ for step in 1 ... updates {
         try timed("accumulate") {
             let dx0 = try shared(layers[0].bwd, "dx").reshaped(P, T, D)
             let gps = try layers.flatMap { l in try l.ternaries.map { try shared(l.bwd, "gp_\($0.name)") } }
-            guard gps.map({ $0.sum() }).reduce(dx0.sum(), { $0 + $1 }).item(Float.self).isFinite else {  // fp16 overflow: skip, shrink
-                lossScale /= 2; goodSequences = 0; print("update \(step): gradient overflow, loss scale -> \(lossScale)"); return
+            guard !finite(gps.map { $0.reshaped(P, -1) } + [dx0]).contains(false) else {  // fp16 gradient overflow: skip, shrink
+                lossScale = max(1, lossScale / 2); goodSequences = 0; print("update \(step): gradient overflow, loss scale -> \(lossScale)"); return
             }
             var parts: [(AnyObject, MLXArray)] = [(embedding, headGrads[1] + scatterRows(dx0 / lossScale, tokens)), (finalNorm, headGrads[2])]
             for l in layers {
@@ -282,9 +304,7 @@ for step in 1 ... updates {
             if goodSequences % 200 == 0, lossScale < 65536 { lossScale *= 2 }
         }
     }
-    guard used > 0 else { continue }
-
-    let flips = timed("update") { () -> MLXArray in
+    let flips = used == 0 ? MLXArray.zeros([P]) : timed("update") { () -> MLXArray in
         func mean(_ owner: AnyObject) -> MLXArray { sums[ObjectIdentifier(owner)]! / Float(used) }
         var pending = allParams.compactMap { p in p.update(mean(p), step: step, rate: rate) }
         var moved = MLXArray.zeros([P])
@@ -303,16 +323,14 @@ for step in 1 ... updates {
     }
     if tokensSeen >= nextRound || step == updates {
         nextRound += roundTokens
-        let kl = try evaluate()
+        let kl = try evaluate().map { $0.isFinite ? $0 : .infinity }
         report(kl, tokens: tokensSeen)
+        ranking = kl.indices.sorted { kl[$0] < kl[$1] }
         if P > 1, step < updates {  // population-based training: the worse half copies the better half, then explores
-            let ranked = kl.indices.sorted { kl[$0] < kl[$1] }, top = Array(ranked.prefix(P / 2))
+            let top = Array(ranking.prefix(P / 2))
             var source = Array(0 ..< P)
-            for (i, slot) in ranked.suffix(P - P / 2).enumerated() { source[slot] = top[i % top.count] }
-            let index = MLXArray(source.map(Int32.init))
-            var pending = allParams.compactMap { $0.select(index) } + layers.flatMap { $0.ternaries.flatMap { $0.select(index) } }
-            pending += layers.flatMap { $0.ternaries.flatMap { [$0.acc, $0.rows, $0.cols] } } + allParams.flatMap { [$0.value, $0.m, $0.v] }
-            eval(pending)
+            for (i, slot) in ranking.suffix(P - P / 2).enumerated() { source[slot] = top[i % top.count] }
+            adopt(source)
             for (slot, from) in source.enumerated() where slot != from { hyper[slot] = perturbed(hyper[from]); print("  m\(slot) <- m\(from), perturbed") }
         }
     }
