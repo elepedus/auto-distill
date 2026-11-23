@@ -175,3 +175,29 @@ about P = 4, where the ANE is saturated:
 | attention | 0.57 / 1.30 ms | 0.40 / 1.00 ms | 1.4× / 1.3× |
 
 Receipt: [`results/population-probe-2026-11-23.txt`](results/population-probe-2026-11-23.txt).
+
+**Population-based training, 8 members, 2.05M tokens.** Members start from the hand-picked settings (member 0)
+and from random draws over Adam rate 3e-4–2e-2, θ 2–64, τ 50–4,000 and a ρ multiplier of 0.1–2. Every 256k tokens
+the worse half copies the better half and perturbs its hyperparameters by ×0.8 or ×1.25:
+
+| tokens | best held-out KL | its hyperparameters (Adam rate, θ, τ, ρ×) |
+|---|---|---|
+| 256k | 7.74 | 1.6e-3, 20, 1,250, 0.80 |
+| 512k | 5.92 | same |
+| 1.02M | 3.86 | 1.3e-3, 16, 1,562, 0.64 |
+| 1.79M | 2.61 | 2.0e-3, 10.2, 2,441, 1.00 |
+| 2.05M | 2.67 | 1.0e-3, 12.8, 1,953, 0.80 |
+
+Receipt: [`results/ane-pbt8-2026-11-23.txt`](results/ane-pbt8-2026-11-23.txt). The two members drawn with Adam
+rates above 9e-3 diverged by update ~200 and were replaced. Throughput was 11,650 member-tokens/s excluding text
+generation.
+
+Treat the comparison with the single runs (7.43 at 2.05M tokens) with care:
+- **Not reproducible.** Member 0 has the single run's exact settings, data and initialisation, yet reached 8.00
+  at 256k tokens against about 9.9 alone. Members are bit-identical on the ANE; what differed is shared loss
+  scaling and skipped sequences. With noise-driven flips at ρ ≈ 1, the trajectory seems to be chaotic, so
+  single-run comparisons need replicates.
+- **Unstable late.** Training KL swings by ±0.5 between logs late in the run, and the lineage that led at 1.79M
+  tokens fell to 7.8 by 2.05M.
+- **Loss scale.** The scale wandered between 8 and 2,048 across runs. fp16 gradient range is a candidate cause of
+  both effects.
