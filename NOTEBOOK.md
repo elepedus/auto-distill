@@ -140,3 +140,17 @@ About 1.5 hours is deliberately unallocated.
     GPU tern-def); PBT-8 with prescale and without. GPU queue: fp32 references and tern-def seeds 1–2.
     One ANE job and one GPU job run concurrently, so wall-clock numbers from tonight are not throughput
     measurements.
+- 2026-11-23 23:55. **ANE matches GPU fp32 at equal tokens** (single seeds, fixed 8-sequence eval set, 2.05M
+  tokens, eval every 256k):
+
+  | run | trunk | grads | curve 0 → 2.05M | final |
+  |---|---|---|---|---|
+  | ane-def-pre-s0 | ANE ternary, `--grad-prescale` | fp16 + per-tensor 2^k | 9.17 5.64 3.78 3.17 2.81 2.43 2.25 2.19 | **2.150** |
+  | tern-def-s0 | GPU ternary TTF | fp32 | 9.17 4.94 3.80 2.78 2.73 2.48 2.35 2.25 | 2.232 |
+  | tern-best-s0 | GPU ternary TTF, best settings | fp32 | 9.17 5.60 3.82 2.70 2.72 2.49 2.42 2.31 | 2.254 |
+  | fp32-lr3e-3-s0 | GPU float, constant lr | fp32 | 9.37 4.42 3.65 2.91 2.83 2.89 2.78 2.43 | 2.453 |
+  | ane-def-base-s0 | ANE ternary, no prescale | fp16 | 9.17 5.95, then diverged at ~300k | — |
+
+  - The baseline diverged from a forward overflow (L3.a_mix nonfinite; gains, scales and taps grow).
+  - The prescale run had 91 overflow events, all skipped, and no divergence. It may have been lucky.
+  - A stabiliser agent is deriving parameter bounds (`--bound`) so the forward can't overflow by construction.
