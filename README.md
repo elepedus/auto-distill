@@ -65,6 +65,21 @@ On an M2 Max, conv and attention layers at both ends of the network match the re
 L2) at the layer output, with no non-finite values, in 4.5–6 ms per 256 tokens per layer. Receipt:
 [`results/lfm2-ane-layers-2026-11-23.txt`](results/lfm2-ane-layers-2026-11-23.txt).
 
+**Backward pass.** A second program per layer recomputes the forward pass from the layer input and runs a
+hand-written backward pass. It takes the gradient at the layer output and returns:
+- `dx`, the gradient for the layer below;
+- for each ternary linear, its two gradient factors: the input activations and the output gradient times the
+  row scale. Their product is the gradient for the trits, so the full weight-gradient matrix never exists on the
+  ANE. This is the form TTF-style training consumes;
+- the gradients of the float parameters: row scales, norm gains and conv taps.
+
+Every ternary matmul in it is exact up to the final rounding, and token and feature sums go through
+ones-matmuls (wide accumulator). Against MLX fp32 autodiff on the same bytes, all gradients point the same way
+(cosine ≥ 0.9989, no non-finite values, 10–11.5 ms per 256 tokens per layer). Typical errors are 0.1–0.6%. The
+worst are 3–4.5%, in layers 0 and 2, where results come out of heavy cancellation: softmax's backward on the
+q/k path, and norm-gain gradients summed over 256 random-sign token terms. The ANE rounds every elementwise op
+to fp16; MLX's fp16 autodiff, whose fused kernels keep fp32 inside, stays 5–15× closer.
+
 How the layer is built for the ANE:
 - **RMSNorm** divides by each row's max |x| before squaring and sums the squares with a matmul (wide
   accumulator), with ε rescaled to match. No finite input can overflow it.

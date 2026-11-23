@@ -1,7 +1,19 @@
-# lfm2-ane receipt: 2026-11-23T18:06Z, Apple M2 Max, macOS 27.2.1. LFM2-350M, ternary (absmean per row) weights, 256 wikitext-2 tokens; ANE vs MLX fp32 reference reading the same IOSurfaces
+# lfm2-ane receipt: 2026-11-23T18:16Z, Apple M2 Max, macOS 27.2.1. LFM2-350M, ternary (absmean per row) weights, 256 wikitext-2 tokens, gy ~ N(0,1). fwd: ANE vs MLX fp32 reference. bwd: ANE gradients vs MLX fp32 autodiff; detail shows ANE error / MLX-fp16-autodiff error (fused MLX kernels keep fp32 internally, so the second is an optimistic fp16 floor). Both engines read the same IOSurfaces.
 reference vs mlx-swift-lm logits: rel L2 0.0065, argmax agreement 98.0%
 residual-stream max|h| per layer input: 0 1 1 1 0 1 1 0 17 17 17 17 17 17 17 8 7
-layer  0 conv  compile 0.4s  eval 5.00 ms |  r: rel L2 0.00222, max|ref| 0.0501, nonfinite 0  m: rel L2 0.00179, max|ref| 0.0653, nonfinite 0  y: rel L2 0.00050, max|ref| 0.213, nonfinite 0
-layer  2 attn  compile 0.5s  eval 6.05 ms |  r: rel L2 0.00205, max|ref| 0.0596, nonfinite 0  m: rel L2 0.00274, max|ref| 0.0458, nonfinite 0  y: rel L2 0.00060, max|ref| 0.956, nonfinite 0
-layer 14 attn  compile 0.5s  eval 5.45 ms |  r: rel L2 0.00205, max|ref| 0.157, nonfinite 0  m: rel L2 0.00126, max|ref| 0.266, nonfinite 0  y: rel L2 0.00067, max|ref| 17, nonfinite 0
-layer 15 conv  compile 0.4s  eval 4.54 ms |  r: rel L2 0.00163, max|ref| 0.0607, nonfinite 0  m: rel L2 0.00116, max|ref| 0.366, nonfinite 0  y: rel L2 0.00045, max|ref| 8.24, nonfinite 0
+layer  0 conv fwd  compile 0.4s  eval 5.44 ms |  worst rel L2 0.0022 (r), min cosine 0.999999, nonfinite 0
+    r 0.0022 m 0.0018 y 0.0005
+layer  0 conv bwd  compile 1.0s  eval 10.20 ms |  worst rel L2 0.0454 (dg_op), min cosine 0.998979, nonfinite 0
+    dx 0.0037/0.0003 dT_b 0.0036/0.0007 ds_b 0.0043/0.0008 dT_c 0.0038/0.0006 ds_c 0.0043/0.0007 dT_o 0.0033/0.0004 ds_o 0.0036/0.0004 dT_w1 0.0014/0.0002 ds_w1 0.0014/0.0002 dT_w2 0.0013/0.0002 ds_w2 0.0018/0.0002 dT_w3 0.0013/0.0002 ds_w3 0.0014/0.0002 dT_x 0.0035/0.0007 ds_x 0.0043/0.0008 dg_op 0.0454/0.0010 dg_ffn 0.0129/0.0002 dk 0.0053/0.0007
+layer  2 attn fwd  compile 0.4s  eval 6.27 ms |  worst rel L2 0.0027 (m), min cosine 0.999997, nonfinite 0
+    r 0.0020 m 0.0027 y 0.0006
+layer  2 attn bwd  compile 1.2s  eval 11.43 ms |  worst rel L2 0.0341 (dg_q), min cosine 0.999420, nonfinite 0
+    dx 0.0055/0.0006 dT_k 0.0312/0.0021 ds_k 0.0331/0.0026 dT_o 0.0038/0.0007 ds_o 0.0037/0.0006 dT_q 0.0328/0.0024 ds_q 0.0270/0.0026 dT_v 0.0038/0.0013 ds_v 0.0040/0.0015 dT_w1 0.0018/0.0008 ds_w1 0.0018/0.0008 dT_w2 0.0018/0.0007 ds_w2 0.0028/0.0006 dT_w3 0.0018/0.0007 ds_w3 0.0018/0.0007 dg_op 0.0181/0.0020 dg_ffn 0.0179/0.0009 dg_q 0.0341/0.0028 dg_k 0.0320/0.0027
+layer 14 attn fwd  compile 0.4s  eval 5.22 ms |  worst rel L2 0.0021 (r), min cosine 0.999998, nonfinite 0
+    r 0.0021 m 0.0013 y 0.0007
+layer 14 attn bwd  compile 1.2s  eval 11.18 ms |  worst rel L2 0.0083 (ds_k), min cosine 0.999966, nonfinite 0
+    dx 0.0026/0.0009 dT_k 0.0066/0.0024 ds_k 0.0083/0.0028 dT_o 0.0027/0.0008 ds_o 0.0026/0.0008 dT_q 0.0062/0.0026 ds_q 0.0060/0.0028 dT_v 0.0026/0.0015 ds_v 0.0026/0.0016 dT_w1 0.0015/0.0008 ds_w1 0.0014/0.0007 dT_w2 0.0013/0.0007 ds_w2 0.0013/0.0006 dT_w3 0.0014/0.0007 ds_w3 0.0013/0.0006 dg_op 0.0050/0.0019 dg_ffn 0.0070/0.0010 dg_q 0.0061/0.0030 dg_k 0.0069/0.0032
+layer 15 conv fwd  compile 0.3s  eval 5.16 ms |  worst rel L2 0.0016 (r), min cosine 0.999999, nonfinite 0
+    r 0.0016 m 0.0012 y 0.0004
+layer 15 conv bwd  compile 1.0s  eval 10.27 ms |  worst rel L2 0.0156 (dg_op), min cosine 0.999881, nonfinite 0
+    dx 0.0014/0.0003 dT_b 0.0021/0.0006 ds_b 0.0031/0.0007 dT_c 0.0021/0.0006 ds_c 0.0028/0.0006 dT_o 0.0019/0.0006 ds_o 0.0019/0.0005 dT_w1 0.0013/0.0002 ds_w1 0.0014/0.0001 dT_w2 0.0012/0.0002 ds_w2 0.0011/0.0002 dT_w3 0.0013/0.0002 ds_w3 0.0013/0.0001 dT_x 0.0021/0.0006 ds_x 0.0032/0.0007 dg_op 0.0156/0.0010 dg_ffn 0.0043/0.0002 dk 0.0039/0.0008

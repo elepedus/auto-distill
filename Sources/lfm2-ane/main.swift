@@ -81,26 +81,25 @@ func tensor(_ a: MLXArray, _ dims: [Int]) throws -> Tensor {
                values: a.asType(.float16).asArray(Float16.self))
 }
 
+func cosine(_ a: MLXArray, _ b: MLXArray) -> Float { ((a * b).sum() / sqrt((a * a).sum() * (b * b).sum())).item(Float.self) }
+
 for i in layers.isEmpty ? [0, 2, 14, 15] : layers {
     let attention = attentionLayers.contains(i), pre = "model.layers.\(i)."
-    let started = Date()
-    let (program, constants) = try layerProgram(shape, attention: attention)
-    let ane = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 2 << 30))
-    defer { try? ane.close() }
-
-    // Effective weights per ANE input name: (MLX weight key, rows to take, duplicate kv heads?)
+    // Ternary weights per ANE input name, and the MLX weight each comes from.
     var weights: [String: String] = ["w1": "feed_forward.w1.weight", "w3": "feed_forward.w3.weight", "w2": "feed_forward.w2.weight"]
     if attention {
         weights.merge(["q": "self_attn.q_proj.weight", "k": "self_attn.k_proj.weight", "v": "self_attn.v_proj.weight", "o": "self_attn.out_proj.weight"]) { $1 }
     } else {
         weights.merge(["b": "conv.in_proj.weight", "c": "conv.in_proj.weight", "x": "conv.in_proj.weight", "o": "conv.out_proj.weight"]) { $1 }
     }
-    var inputs: [String: Tensor] = constants.merging(["x": try tensor(hidden[i], [1, 1, T, 1024]),
+    let inProjPart = ["b": 0, "c": 1, "x": 2]
+    var inputs: [String: Tensor] = ["x": try tensor(hidden[i], [1, 1, T, 1024]),
                                     "g_op": try tensor(p[pre + "operator_norm.weight"]!, [1, 1, 1, 1024]),
-                                    "g_ffn": try tensor(p[pre + "ffn_norm.weight"]!, [1, 1, 1, 1024])]) { $1 }
+                                    "g_ffn": try tensor(p[pre + "ffn_norm.weight"]!, [1, 1, 1, 1024]),
+                                    "gy": try tensor(MLXRandom.normal([1, T, 1024]), [1, 1, T, 1024])]  // upstream gradient at loss-scaled size
     for (name, key) in weights {
         var w = p[pre + key]!
-        if !attention, let part = ["b": 0, "c": 1, "x": 2][name] { w = w[(part * 1024) ..< ((part + 1) * 1024)] }
+        if !attention, let part = inProjPart[name] { w = w[(part * 1024) ..< ((part + 1) * 1024)] }
         if attention, name == "k" || name == "v" {  // GQA: repeat each of the 8 kv heads twice
             w = repeated(w.reshaped(8, 1, 64, 1024), count: 2, axis: 1).reshaped(1024, 1024)
         }
@@ -113,38 +112,98 @@ for i in layers.isEmpty ? [0, 2, 14, 15] : layers {
     } else {
         for j in 0 ..< 3 { inputs["k\(j)"] = try tensor(p[pre + "conv.conv.weight"]![0..., j, 0], [1, 1, 1, 1024]) }
     }
-    _ = try ane.prepare(inputs: inputs)  // the one upload; from here on both engines share these surfaces
-    let compiled = Date()
-    let surfaces = try ane.surfaceBindings()
-    let observation = try ane.evaluatePrepared(readOutputs: false, poisonOutputs: true)
-    func shared(_ name: String) -> MLXArray { view(surfaces.first { $0.name == name || $0.name.hasPrefix(name + "@") }!).asType(.float32) }
 
-    // Reference from the same bytes: effective weight = trits * scale, rebuilt from the shared surfaces.
-    let x = shared("x").reshaped(1, T, 1024)
-    func effective(_ key: String) -> MLXArray {
-        let name = key.split(separator: ".").dropLast().last.map(String.init) ?? ""
-        let short = ["w1": "w1", "w3": "w3", "w2": "w2", "q_proj": "q", "k_proj": "k", "v_proj": "v", "out_proj": "o"][name]
-        if let short { let w = shared("w_\(short)").squeezed() * shared("s_\(short)").reshaped(-1, 1)
-            return attention && (short == "k" || short == "v") ? w.reshaped(8, 2, 64, 1024)[0..., 0].reshaped(512, 1024) : w }
-        return concatenated(["b", "c", "x"].map { shared("w_\($0)").squeezed() * shared("s_\($0)").reshaped(-1, 1) }, axis: 0)  // in_proj
-    }
-    func vector(_ key: String) -> MLXArray {
-        switch key.split(separator: ".").suffix(2).joined(separator: ".") {
-        case "operator_norm.weight": shared("g_op").reshaped(-1)
-        case "ffn_norm.weight": shared("g_ffn").reshaped(-1)
-        case "q_layernorm.weight": shared("g_q")[0, 0, 0]
-        case "k_layernorm.weight": shared("g_k")[0, 0, 0]
-        default: stacked((0 ..< 3).map { shared("k\($0)").reshaped(-1) }, axis: 1)[0..., 0..., .newAxis]  // conv kernel [D, 3, 1]
+    for backward in [false, true] {
+        let started = Date()
+        let (program, constants) = try layerProgram(shape, attention: attention, backward: backward)
+        let ane = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 2 << 30))
+        defer { try? ane.close() }
+        let names = Set(ane.inputs.map(\.name))
+        _ = try ane.prepare(inputs: inputs.merging(constants) { $1 }.filter { names.contains($0.key) })  // the one upload
+        let compiled = Date()
+        let surfaces = try ane.surfaceBindings()
+        let observation = try ane.evaluatePrepared(readOutputs: false, poisonOutputs: true)
+        func shared(_ name: String) -> MLXArray { view(surfaces.first { $0.name == name || $0.name.hasPrefix(name + "@") }!).asType(.float32) }
+
+        // Reference from the same bytes: effective weight = trits * scale, rebuilt from the shared surfaces.
+        let x = shared("x").reshaped(1, T, 1024)
+        func effective(_ key: String) -> MLXArray {
+            let name = key.split(separator: ".").dropLast().last.map(String.init) ?? ""
+            let short = ["w1": "w1", "w3": "w3", "w2": "w2", "q_proj": "q", "k_proj": "k", "v_proj": "v", "out_proj": "o"][name]
+            if let short { let w = shared("w_\(short)").squeezed() * shared("s_\(short)").reshaped(-1, 1)
+                return attention && (short == "k" || short == "v") ? w.reshaped(8, 2, 64, 1024)[0..., 0].reshaped(512, 1024) : w }
+            return concatenated(["b", "c", "x"].map { shared("w_\($0)").squeezed() * shared("s_\($0)").reshaped(-1, 1) }, axis: 0)  // in_proj
         }
+        func vector(_ key: String) -> MLXArray {
+            switch key.split(separator: ".").suffix(2).joined(separator: ".") {
+            case "operator_norm.weight": shared("g_op").reshaped(-1)
+            case "ffn_norm.weight": shared("g_ffn").reshaped(-1)
+            case "q_layernorm.weight": shared("g_q")[0, 0, 0]
+            case "k_layernorm.weight": shared("g_k")[0, 0, 0]
+            default: stacked((0 ..< 3).map { shared("k\($0)").reshaped(-1) }, axis: 1)[0..., 0..., .newAxis]  // conv kernel [D, 3, 1]
+            }
+        }
+        var report = String(format: "layer %2d %@ %@  compile %.1fs  eval %.2f ms |", i, attention ? "attn" : "conv",
+                            backward ? "bwd" : "fwd", compiled.timeIntervalSince(started), observation.elapsed * 1000)
+        var checks: [(String, MLXArray, MLXArray)] = [], floor16: [Float] = []  // (name, ANE, reference); MLX-fp16 error
+        if !backward {
+            let ref = referenceLayer(i, x, effective, vector)
+            checks = [("r", shared("r").reshaped(1, T, 1024), ref.r), ("m", shared("m").reshaped(1, T, 1024), ref.m),
+                      ("y", shared("y").reshaped(1, T, 1024), ref.y)]
+        } else {
+            // MLX autodiff of the reference layer, loss = sum(y * gy), over x, effective weights and vectors.
+            let wKeys = Array(Set(weights.values)).sorted().map { pre + $0 }
+            let vKeys = ["operator_norm.weight", "ffn_norm.weight"].map { pre + $0 }
+                + (attention ? ["self_attn.q_layernorm.weight", "self_attn.k_layernorm.weight"] : ["conv.conv.weight"]).map { pre + $0 }
+            let keys = wKeys + vKeys, upstream = shared("gy").reshaped(1, T, 1024)
+            let loss: ([MLXArray]) -> [MLXArray] = { a in
+                let d = Dictionary(uniqueKeysWithValues: zip(keys, a.dropFirst()))
+                return [(referenceLayer(i, a[0], { d[$0]! }, { d[$0]! }).y * upstream).sum()]
+            }
+            let args = [x] + wKeys.map(effective) + vKeys.map(vector)
+            func gradients(_ a: [MLXArray]) -> [String: MLXArray] {
+                Dictionary(uniqueKeysWithValues: zip(["x"] + keys, grad(loss, argumentNumbers: Array(0 ..< a.count))(a).map { $0.asType(.float32) }))
+            }
+            // fp32 is the reference; the same autodiff with fp16 inputs gives a floor to compare the ANE against.
+            let (ref, ref16) = (gradients(args), gradients(args.map { $0.asType(.float16) }))
+            func add(_ name: String, _ got: MLXArray, _ want: ([String: MLXArray]) -> MLXArray) {
+                checks.append((name, got, want(ref))); floor16.append(relL2(want(ref16), want(ref)))
+            }
+            add("dx", shared("dx").reshaped(1, T, 1024)) { $0["x"]! }
+            let activation = ["w1": "a_hn", "w3": "a_hn", "w2": "a_act", "o": "a_mix"]
+            for (name, key) in weights.sorted(by: { $0.key < $1.key }) {
+                // dL/dtrits = gpᵀ·a = dL/dW_eff ⊙ s;  dL/ds = Σ_k dL/dW_eff · trits
+                var dT = matmul(shared("gp_\(name)").squeezed().T, shared(activation[name] ?? "a_xn").squeezed())
+                var ds = shared("ds_\(name)").reshaped(-1)
+                var trits = shared("w_\(name)").squeezed(), scale = shared("s_\(name)").reshaped(-1, 1)
+                let part = attention ? nil : inProjPart[name]
+                if attention, name == "k" || name == "v" {  // the 16-head copies sum back to 8 kv heads
+                    dT = dT.reshaped(8, 2, 64, 1024).sum(axis: 1).reshaped(512, 1024)
+                    ds = ds.reshaped(8, 2, 64).sum(axis: 1).reshaped(-1)
+                    trits = trits.reshaped(8, 2, 64, 1024)[0..., 0].reshaped(512, 1024)
+                    scale = scale.reshaped(8, 2, 64, 1)[0..., 0].reshaped(512, 1)
+                }
+                func dW(_ r: [String: MLXArray]) -> MLXArray { part.map { r[pre + key]![($0 * 1024) ..< (($0 + 1) * 1024)] } ?? r[pre + key]! }
+                add("dT_\(name)", dT) { dW($0) * scale }
+                add("ds_\(name)", ds) { (dW($0) * trits).sum(axis: 1) }
+            }
+            add("dg_op", shared("dg_op").reshaped(-1)) { $0[pre + "operator_norm.weight"]! }
+            add("dg_ffn", shared("dg_ffn").reshaped(-1)) { $0[pre + "ffn_norm.weight"]! }
+            if attention {
+                for n in ["q", "k"] { add("dg_\(n)", shared("dg_\(n)").reshaped(16, 64).sum(axis: 0)) { $0[pre + "self_attn.\(n)_layernorm.weight"]! } }
+            } else {
+                add("dk", stacked((0 ..< 3).map { shared("dk\($0)").reshaped(-1) }, axis: 1)) { $0[pre + "conv.conv.weight"]!.squeezed(axis: 2) }
+            }
+        }
+        var worst = (name: "", err: Float(0)), minCos = Float(1), nonfinite = 0, detail = ""
+        for (k, (name, got, want)) in checks.enumerated() {
+            let err = relL2(got, want), c = cosine(got, want)
+            nonfinite += (isNaN(got).asType(.int32) + (abs(got) .> 65504).asType(.int32)).sum().item(Int.self)
+            if err > worst.err { worst = (name, err) }
+            minCos = min(minCos, c)
+            detail += k < floor16.count ? String(format: " %@ %.4f/%.4f", name, err, floor16[k]) : String(format: " %@ %.4f", name, err)
+        }
+        report += String(format: "  worst rel L2 %.4f (%@), min cosine %.6f, nonfinite %d\n   ", worst.err, worst.name, minCos, nonfinite) + detail
+        print(report)
     }
-    let ref = referenceLayer(i, x, effective, vector)
-    var report = String(format: "layer %2d %@  compile %.1fs  eval %.2f ms |", i, attention ? "attn" : "conv",
-                        compiled.timeIntervalSince(started), observation.elapsed * 1000)
-    for (name, want) in [("r", ref.r), ("m", ref.m), ("y", ref.y)] {
-        let got = shared(name).reshaped(1, T, 1024)
-        let nonfinite = (isNaN(got).asType(.int32) + (abs(got) .> 65504).asType(.int32)).sum().item(Int.self)
-        report += String(format: "  %@: rel L2 %.5f, max|ref| %.3g, nonfinite %d", name, relL2(got, want),
-                         abs(want).max().item(Float.self), nonfinite)
-    }
-    print(report)
 }
