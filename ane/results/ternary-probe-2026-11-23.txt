@@ -1,0 +1,17 @@
+# ternary-probe receipt: 2026-11-23T17:31Z, Apple M2 Max, macOS 27.2.1
+int8 codes × trits fwd K=1024  ties 13.53%  nonfinite 0  max 0.50 ulp | even 93.263%  awayFromZero 100.000%  towardPlusInf 93.236%  towardZero 86.475%
+int8 codes × trits bwd K=4608  ties 22.46%  nonfinite 0  max 0.50 ulp | even 88.825%  awayFromZero 100.000%  towardPlusInf 88.726%  towardZero 77.541%
+fp16 normal × trits fwd K=1024  ties  2.60%  nonfinite 0  max 0.50 ulp | even 98.711%  awayFromZero 100.000%  towardPlusInf 98.694%  towardZero 97.400%
+fp16 normal × trits bwd K=4608  ties  1.45%  nonfinite 0  max 0.50 ulp | even 99.269%  awayFromZero 100.000%  towardPlusInf 99.282%  towardZero 98.549%
+worst 127×+1 fwd K=1024  ties  0.00%  nonfinite 0  max 0.00 ulp | even 100.000%  awayFromZero 100.000%  towardPlusInf 100.000%  towardZero 100.000%
+worst 127×+1 bwd K=4608  ties  0.00%  nonfinite 0  max 0.00 ulp | even 100.000%  awayFromZero 100.000%  towardPlusInf 100.000%  towardZero 100.000%
+worst, no prescale fwd K=1024  ties  0.00%  nonfinite 294912  max 0.00 ulp | even 0.000%  awayFromZero 0.000%  towardPlusInf 0.000%  towardZero 0.000%
+worst, no prescale bwd K=4608  ties  0.00%  nonfinite 65536  max 0.00 ulp | even 0.000%  awayFromZero 0.000%  towardPlusInf 0.000%  towardZero 0.000%
+int8 codes × trits fwd K=4608  ties 22.47%  nonfinite 0  max 0.50 ulp | even 88.827%  awayFromZero 100.000%  towardPlusInf 88.789%  towardZero 77.531%
+int8 codes × trits bwd K=1024  ties 13.47%  nonfinite 0  max 0.50 ulp | even 93.270%  awayFromZero 100.000%  towardPlusInf 93.268%  towardZero 86.534%
+fp16 normal × trits fwd K=4608  ties  1.42%  nonfinite 0  max 0.50 ulp | even 99.293%  awayFromZero 100.000%  towardPlusInf 99.284%  towardZero 98.577%
+fp16 normal × trits bwd K=1024  ties  2.58%  nonfinite 0  max 0.50 ulp | even 98.716%  awayFromZero 100.000%  towardPlusInf 98.730%  towardZero 97.423%
+worst 127×+1 fwd K=4608  ties  0.00%  nonfinite 0  max 0.00 ulp | even 100.000%  awayFromZero 100.000%  towardPlusInf 100.000%  towardZero 100.000%
+worst 127×+1 bwd K=1024  ties  0.00%  nonfinite 0  max 0.00 ulp | even 100.000%  awayFromZero 100.000%  towardPlusInf 100.000%  towardZero 100.000%
+worst, no prescale fwd K=4608  ties  0.00%  nonfinite 65536  max 0.00 ulp | even 0.000%  awayFromZero 0.000%  towardPlusInf 0.000%  towardZero 0.000%
+worst, no prescale bwd K=1024  ties  0.00%  nonfinite 294912  max 0.00 ulp | even 0.000%  awayFromZero 0.000%  towardPlusInf 0.000%  towardZero 0.000%
