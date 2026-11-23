@@ -26,7 +26,19 @@ let frozenTrits = CommandLine.arguments.contains("--frozen-trits")  // ablation:
 let updates = tokenBudget / (T * accum)
 let shape = LFM2Shape(tokens: T, dim: D, ff: F, heads: H, headDim: hd, ropeBase: 1e6, population: P)
 let beta2: Float = 0.95
-MLXRandom.seed(0)  // same data, init and eval set across runs
+let seed = Int(option("seed") ?? "0")!
+let fixedScale = CommandLine.arguments.contains("--fixed-scale")  // never halve or double the loss scale
+let evalCount = Int(option("eval") ?? "8")!
+MLXRandom.seed(UInt64(seed))  // same data, init and eval set across runs
+
+// --jsonl PATH: one JSON object per line, flushed. Non-finite numbers become null.
+let jsonl = option("jsonl").flatMap { path -> FileHandle? in
+    if !FileManager.default.fileExists(atPath: path) { FileManager.default.createFile(atPath: path, contents: nil) }
+    let h = FileHandle(forWritingAtPath: path); _ = try? h?.seekToEnd(); return h
+}
+func num(_ x: Float) -> String { x.isFinite ? "\(x)" : "null" }
+func nums(_ xs: [Float]) -> String { "[" + xs.map(num).joined(separator: ",") + "]" }
+func emit(_ line: String) { try? jsonl?.write(contentsOf: Data((line + "\n").utf8)) }  // FileHandle writes are unbuffered
 
 // Zero-copy self-test: CPU writes are visible through the MLX view, GPU writes land in our memory.
 do {
@@ -47,12 +59,16 @@ struct SplitMix: RandomNumberGenerator {
         return z ^ (z >> 31)
     }
 }
-var rng = SplitMix(state: 1)
+var rng = SplitMix(state: 1 &+ UInt64(seed))
 struct Hyper { var lr: Float, theta: Float, tau: Float, rhoScale: Float }
 let ranges: [(WritableKeyPath<Hyper, Float>, ClosedRange<Float>)] = [(\.lr, 3e-4 ... 2e-2), (\.theta, 2 ... 64), (\.tau, 50 ... 4000), (\.rhoScale, 0.1 ... 2)]
 @MainActor func logUniform(_ r: ClosedRange<Float>) -> Float { exp(Float.random(in: log(r.lowerBound) ... log(r.upperBound), using: &rng)) }
 var hyper = (0 ..< P).map { p -> Hyper in
-    if p == 0 { return Hyper(lr: 2e-3, theta: 16, tau: 1000, rhoScale: 1) }
+    if p == 0 {
+        guard let o = option("hyper") else { return Hyper(lr: 2e-3, theta: 16, tau: 1000, rhoScale: 1) }
+        let v = o.split(separator: ",").map { Float($0)! }
+        return Hyper(lr: v[0], theta: v[1], tau: v[2], rhoScale: v[3])  // --hyper lr,theta,tau,rho
+    }
     var h = Hyper(lr: 0, theta: 0, tau: 0, rhoScale: 0)
     for (key, range) in ranges { h[keyPath: key] = logUniform(range) }
     return h
@@ -188,7 +204,7 @@ let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
 @MainActor func teacherLogProbs(_ tokens: MLXArray) -> MLXArray {
     let t = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(t); return t
 }
-let evalSet = try generate(8).map { MLXArray($0) }  // held out: never trained on
+let evalSet = try generate(evalCount).map { MLXArray($0) }  // held out: never trained on
 let evalTargets = evalSet.map(teacherLogProbs)
 var pool: [[Int32]] = []
 
@@ -223,6 +239,7 @@ func scatterRows(_ dx: MLXArray, _ tokens: MLXArray) -> MLXArray { MLXArray.zero
     print("eval at \(tokens) tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):")
     for p in kl.indices.sorted(by: { kl[$0] < kl[$1] }) {
         let h = hyper[p]
+        emit("{\"type\":\"eval\",\"tokens\":\(tokens),\"member\":\(p),\"kl\":\(num(kl[p])),\"lr\":\(h.lr),\"theta\":\(h.theta),\"tau\":\(h.tau),\"rho\":\(h.rhoScale),\"scale\":\(lossScale)}")
         print(String(format: "  m%-2d %.3f  lr %.2e  theta %5.1f  tau %6.0f  rho x %.2f  noise/theta %.2f", p, kl[p], h.lr, h.theta, h.tau,
                      h.rhoScale, h.rhoScale * sqrt(h.tau / 2) / h.theta))
     }
@@ -248,7 +265,8 @@ var ranking = Array(0 ..< P)  // best first, from the last eval
     for p in 0 ..< P where !alive[p] { hyper[p] = perturbed(hyper[best]); print("  m\(p) diverged; now a copy of m\(best), perturbed") }
 }
 
-var lossScale: Float = 1024, goodSequences = 0, timing = [String: Double](), generation = 0.0
+var lossScale: Float = Float(option("loss-scale") ?? "1024")!, goodSequences = 0, timing = [String: Double](), generation = 0.0
+var gzero = [Float](repeating: 0, count: P), gmax = gzero, dxzero = gzero
 var tokensSeen = 0, nextRound = roundTokens, recent = MLXArray.zeros([P]), recentCount = 0
 @MainActor func timed<R>(_ phase: String, _ body: () throws -> R) rethrows -> R {
     let t0 = Date(); defer { timing[phase, default: 0] += Date().timeIntervalSince(t0) }; return try body()
@@ -282,7 +300,15 @@ for step in 1 ... updates {
             let dx0 = try shared(layers[0].bwd, "dx").reshaped(P, T, D)
             let gps = try layers.flatMap { l in try l.ternaries.map { try shared(l.bwd, "gp_\($0.name)") } }
             guard !finite(gps.map { $0.reshaped(P, -1) } + [dx0]).contains(false) else {  // fp16 gradient overflow: skip, shrink
-                lossScale = max(1, lossScale / 2); goodSequences = 0; print("update \(step): gradient overflow, loss scale -> \(lossScale)"); return
+                if !fixedScale { lossScale = max(1, lossScale / 2) }
+                goodSequences = 0; print("update \(step): gradient overflow, loss scale -> \(lossScale)")
+                emit("{\"type\":\"overflow\",\"update\":\(step),\"scale\":\(lossScale)}"); return
+            }
+            if step % logEvery == 0 || step == 1 {  // gradient diagnostics per member, from the raw fp16 outputs
+                let zeros = gps.map { ($0.reshaped(P, -1) .== 0).asType(.float32).sum(axis: 1) }.reduce(MLXArray.zeros([P]), +)
+                gzero = (zeros / Float(gps.map { $0.size / P }.reduce(0, +))).asArray(Float.self)
+                gmax = gps.map { abs($0.reshaped(P, -1)).max(axis: 1) }.reduce(MLXArray.zeros([P]), { maximum($0, $1) }).asArray(Float.self)
+                dxzero = (dx0.reshaped(P, -1) .== 0).asType(.float32).mean(axis: 1).asArray(Float.self)
             }
             var parts: [(AnyObject, MLXArray)] = [(embedding, headGrads[1] + scatterRows(dx0 / lossScale, tokens)), (finalNorm, headGrads[2])]
             for l in layers {
@@ -301,7 +327,7 @@ for step in 1 ... updates {
             recent = recent + losses[1]
             eval(Array(sums.values) + [recent])  // before the next sequence overwrites the ANE's output surfaces
             used += 1; recentCount += 1; goodSequences += 1
-            if goodSequences % 200 == 0, lossScale < 65536 { lossScale *= 2 }
+            if goodSequences % 200 == 0, lossScale < 65536, !fixedScale { lossScale *= 2 }
         }
     }
     let flips = used == 0 ? MLXArray.zeros([P]) : timed("update") { () -> MLXArray in
@@ -319,6 +345,8 @@ for step in 1 ... updates {
         let kl = (recent / Float(max(1, recentCount))).asArray(Float.self), f = flips.asArray(Float.self)
         print(String(format: "update %5d  tokens %8d  train kl best %.3f median %.3f  flips median %.0f  scale %.0f  %.0f tok/s per member",
                      step, tokensSeen, kl.min()!, kl.sorted()[P / 2], f.sorted()[P / 2], lossScale, Double(tokensSeen) / Date().timeIntervalSince(started)))
+        print(String(format: "    gzero %.2f..%.2f  gmax %.3g..%.3g  dxzero %.2f..%.2f", gzero.min()!, gzero.max()!, gmax.min()!, gmax.max()!, dxzero.min()!, dxzero.max()!))
+        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":\(nums(kl)),\"flips\":\(nums(f)),\"scale\":\(lossScale),\"gzero\":\(nums(gzero)),\"gmax\":\(nums(gmax)),\"dxzero\":\(nums(dxzero))}")
         recent = MLXArray.zeros([P]); recentCount = 0
     }
     if tokensSeen >= nextRound || step == updates {
@@ -339,3 +367,4 @@ let sequences = Double(tokensSeen / T), total = timing.values.reduce(0, +)
 print("time per sequence (ms): " + timing.sorted { $0.value > $1.value }.map { String(format: "%@ %.1f", $0.key, 1000 * $0.value / sequences) }.joined(separator: ", ")
       + String(format: "; teacher text generation %.1f", 1000 * generation / sequences))
 print(String(format: "throughput excluding text generation: %.0f tok/s per member, %.0f member-tok/s", Double(tokensSeen) / total, Double(tokensSeen * P) / total))
+emit("{\"type\":\"done\",\"tokens\":\(tokensSeen),\"seconds\":\(Date().timeIntervalSince(started))}")
