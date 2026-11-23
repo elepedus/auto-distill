@@ -8,6 +8,6 @@ while read -r name args; do
   [[ -z $name || $name == \#* ]] && continue
   grep -qs "throughput excluding" "$O/$name.log" && { echo "skip $name" >> "$O/queue.log"; continue; }
   echo "$name start $(date -u +%FT%TZ)" >> "$O/queue.log"
-  "$O/ane-train.bin" $args --jsonl "$O/$name.jsonl" > "$O/$name.log" 2>&1
-  echo "$name end $(date -u +%FT%TZ) exit $?" >> "$O/queue.log"
+  "$O/ane-train.bin" $args --jsonl "$O/$name.jsonl" > "$O/$name.log" 2>&1 < /dev/null; rc=$?
+  echo "$name end $(date -u +%FT%TZ) exit $rc" >> "$O/queue.log"
 done < "$Q"
