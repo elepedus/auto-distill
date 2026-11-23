@@ -16,6 +16,7 @@ import MLX
 import MLXLLM
 import MLXLMCommon
 import MLXNN
+setvbuf(stdout, nil, _IOLBF, 0)  // line-buffered, so a log survives fatalError
 
 func option(_ name: String) -> String? { CommandLine.arguments.firstIndex(of: "--" + name).map { CommandLine.arguments[$0 + 1] } }
 let T = 256, D = 256, F = 768, H = 4, hd = 64, V = 65536
