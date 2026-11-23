@@ -110,3 +110,12 @@ About 1.5 hours is deliberately unallocated.
   - **Decision.** The float gap is far above 1 nat, so build `float-train --ternary` (fp32 GPU gradients with the
     same TTF) to separate fp16 numerics from ternary capacity. In parallel, a numerics agent is finding the
     overflow source and adding per-tensor power-of-two gradient prescales.
+- 2026-11-23 23:00. **KEY: the ANE gap is numerics, not ternary or TTF.** `float-train --ternary` (70d0306) runs
+  the same ternary model and the same TTF kernel and schedules, with fp32 autodiff gradients on the GPU. At 256k
+  tokens it reaches **~5.0** with the default settings (9.17 → 6.64 → 5.95 → 5.42 → 4.99) and 5.13 with the best
+  settings. ane-train at the same point is ~9.5, and float fp32 is 5.29 at lr 1e-3 and 4.36 at lr 3e-3. So
+  fp16 ANE backward numerics cost ~4.5 nats at 256k tokens. The fix is the critical path.
+  - **Phase 1 cut short.** best-s1 runs to completion; best-fix256 and best-s2 are dropped, because the variance
+    of a numerically broken path isn't worth the machine time.
+  - **Machine now:** GPU reference curves at 2.05M tokens (ternary-TTF with defaults and with best, and fp32 at
+    3e-3 with and without the schedule).
