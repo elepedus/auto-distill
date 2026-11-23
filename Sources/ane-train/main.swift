@@ -348,7 +348,7 @@ for step in 1 ... updates {
             let r = head([h, embedding.value, finalNorm.value, target])
             eval(r.0, r.1, topGradient.write(r.1[0] * lossScale)); return r
         }
-        try timed("backward") { for (li, l) in layers.enumerated().reversed() { if ProcessInfo.processInfo.environment["DBG"] != nil { print("bwd \(li) step \(step)") }; _ = try l.bwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
+        try timed("backward") { for l in layers.reversed() { _ = try l.bwd.evaluatePrepared(readOutputs: false, poisonOutputs: false) } }
 
         try timed("accumulate") {
             let dx0 = try shared(layers[0].bwd, "dx").reshaped(P, T, D)

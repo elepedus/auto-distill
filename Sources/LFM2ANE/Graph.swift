@@ -101,9 +101,10 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     var outputs: [V] = []
     var factor = [String: V]()  // output name -> its prescale constant
     if prescale && backward {  // all factors travel in one input: the ANE refuses programs with more than 32 inputs
-        let packed = try g.const(ones(P * prescaleNames(attention: attention, heads: H).map(\.width).reduce(0, +)), [1, P, 1, prescaleNames(attention: attention, heads: H).map(\.width).reduce(0, +)], name: "f")
+        let names = prescaleNames(attention: attention, heads: H), total = names.map(\.width).reduce(0, +)
+        let packed = try g.const(ones(P * total), [1, P, 1, total], name: "f")
         var offset = 0
-        for (name, width) in prescaleNames(attention: attention, heads: H) {
+        for (name, width) in names {
             let part = g.slice(packed, begin: [0, 0, 0, offset], size: [1, P, 1, width])
             factor[name] = width == 1 ? part : g.reshape(part, [1, PH, 1, 1])  // dg_q, dg_k: one factor per member and head
             offset += width
