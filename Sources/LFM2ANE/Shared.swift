@@ -69,7 +69,7 @@ public let ttfKernel = MLXFast.metalKernel(
         uint idx = thread_position_in_grid.x;
         if (idx >= g_shape[0]) return;
         uint p = idx / (N * K), local = idx % (N * K), i = local / K, j = local % K;
-        device const float* q = params + 4 * p;
+        auto q = params + 4 * p;  // constant or device: MLX puts small inputs in constant memory
         float v = rowv[p * N + i] * colv[p * K + j] / q[3];
         float a = q[1] * acc[idx] - q[0] * g[idx] / (metal::sqrt(v) + 1e-20f);
         float t = float(trits[idx]), d = 0.0f;
