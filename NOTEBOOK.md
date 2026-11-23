@@ -84,3 +84,17 @@ About 1.5 hours is deliberately unallocated.
 ## Entries
 
 - 2026-11-23 20:40 — Plan written. Next: Phase 0 tooling.
+- 2026-11-23 21:00. **P=1 was broken at HEAD.** MLX passes the 4-float `params` in `constant` memory, and the
+  TTF kernel declared it `device` (7fd7052 fixes it). After the fix, P=1 defaults over 2.05M tokens reached
+  held-out KL **7.517**, against 7.43 for the earlier single run. It had 39 overflow events, one roughly every
+  200 updates: the dynamic scale doubles, overflows and halves, sliding from 1024 down to 4–8.
+- 2026-11-23 22:30. **Phase 0 slipped by an hour.** zsh doesn't word-split `$A`, so the subagent's "64k" tests
+  ran as default P=8 runs over 2.05M tokens. Those accidental runs answered two questions:
+  - **Not bit-reproducible.** The same binary and seed match at the 0-token eval and diverge by 256k tokens.
+    Likely cause: GPU atomics (scatter-add in the embedding gradient) combined with chaotic trit flips.
+  - **But PBT-8 quality does reproduce.** Final best was 2.483, 2.455 and 2.668 (the earlier run) across three
+    runs. Single runs (7.4–9.9) are the chaotic ones.
+  - **Gradient diagnostics: the outputs underflow; they don't overflow.** Across the gp_ outputs, gmax is at most
+    ~0.13, while some layers sit at gmax ~4e-6 with 93% exact zeros, at scale 32–64. So the "overflow" events
+    must come from an internal ANE intermediate, not the gradient outputs, and the scale backs off into
+    underflow. Next: find which tensor goes nonfinite, and give each tensor its own scaling.
