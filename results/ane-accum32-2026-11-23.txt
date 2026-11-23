@@ -1,0 +1,323 @@
+# ane-train receipt: 2026-11-23, Apple M2 Max, macOS 27.2.1. Same student, teacher and seed as ane-ttf; --accum 32, equal budget of 2.05M tokens (8,000 sequences).
+compiled 8 ANE programs in 3.5s; 3407872 ternary weights
+eval kl 9.696 at 0 tokens (accum 32)
+update    1  tokens     8192  kl 9.963  flips      0  rho 0.31  scale 1024  548 tok/s
+update    2  tokens    16384  kl 9.632  flips      0  rho 0.38  scale 1024  993 tok/s
+update    3  tokens    24576  kl 10.119  flips      0  rho 0.44  scale 1024  1364 tok/s
+update    4  tokens    32768  kl 9.858  flips      0  rho 0.50  scale 1024  1677 tok/s
+update    5  tokens    40960  kl 9.632  flips      0  rho 0.56  scale 1024  1943 tok/s
+update    6  tokens    49152  kl 9.678  flips      0  rho 0.62  scale 1024  2174 tok/s
+update    7  tokens    57344  kl 9.743  flips      0  rho 0.69  scale 2048  2375 tok/s
+update    8  tokens    65536  kl 9.792  flips      0  rho 0.75  scale 2048  2553 tok/s
+eval kl 9.542 at 65536 tokens
+update    9  tokens    73728  kl 9.303  flips      0  rho 0.81  scale 2048  2097 tok/s
+update   10  tokens    81920  kl 9.615  flips      0  rho 0.88  scale 2048  2233 tok/s
+update   11  tokens    90112  kl 9.975  flips      0  rho 0.94  scale 2048  2358 tok/s
+update   12  tokens    98304  kl 9.640  flips     13  rho 1.00  scale 2048  2473 tok/s
+update   13  tokens   106496  kl 9.945  flips     33  rho 1.00  scale 4096  2580 tok/s
+update 14: gradient overflow, loss scale -> 2048.0
+update 14: gradient overflow, loss scale -> 1024.0
+update   14  tokens   114688  kl 9.906  flips      0  rho 1.00  scale 1024  2680 tok/s
+update   15  tokens   122880  kl 9.984  flips      0  rho 1.00  scale 1024  2772 tok/s
+update   16  tokens   131072  kl 9.949  flips      0  rho 1.00  scale 1024  2860 tok/s
+eval kl 9.637 at 131072 tokens
+update   17  tokens   139264  kl 9.698  flips      0  rho 1.00  scale 1024  2519 tok/s
+update   18  tokens   147456  kl 9.679  flips      0  rho 1.00  scale 1024  2595 tok/s
+update   19  tokens   155648  kl 9.939  flips      0  rho 1.00  scale 1024  2667 tok/s
+update 20: gradient overflow, loss scale -> 1024.0
+update   20  tokens   163840  kl 9.843  flips      0  rho 1.00  scale 1024  2736 tok/s
+update   21  tokens   172032  kl 9.643  flips      0  rho 1.00  scale 1024  2801 tok/s
+update   22  tokens   180224  kl 9.592  flips      0  rho 1.00  scale 1024  2863 tok/s
+update   23  tokens   188416  kl 9.489  flips      0  rho 1.00  scale 1024  2923 tok/s
+update   24  tokens   196608  kl 9.746  flips      0  rho 0.99  scale 1024  2980 tok/s
+eval kl 9.553 at 196608 tokens
+update   25  tokens   204800  kl 9.903  flips      0  rho 0.99  scale 1024  2714 tok/s
+update 26: gradient overflow, loss scale -> 512.0
+update   26  tokens   212992  kl 9.861  flips      0  rho 0.99  scale 512  2767 tok/s
+update   27  tokens   221184  kl 9.928  flips      0  rho 0.99  scale 512  2817 tok/s
+update   28  tokens   229376  kl 9.840  flips      0  rho 0.99  scale 512  2866 tok/s
+update   29  tokens   237568  kl 9.512  flips      0  rho 0.99  scale 512  2913 tok/s
+update   30  tokens   245760  kl 9.920  flips      0  rho 0.99  scale 512  2958 tok/s
+update   31  tokens   253952  kl 10.001  flips      0  rho 0.99  scale 512  3002 tok/s
+update   32  tokens   262144  kl 9.224  flips      0  rho 0.99  scale 1024  3044 tok/s
+eval kl 9.456 at 262144 tokens
+update 33: gradient overflow, loss scale -> 512.0
+update   33  tokens   270336  kl 9.305  flips      0  rho 0.98  scale 512  2828 tok/s
+update   34  tokens   278528  kl 9.805  flips      0  rho 0.98  scale 512  2868 tok/s
+update   35  tokens   286720  kl 9.513  flips      0  rho 0.98  scale 512  2906 tok/s
+update   36  tokens   294912  kl 9.680  flips      0  rho 0.98  scale 512  2944 tok/s
+update   37  tokens   303104  kl 9.502  flips      0  rho 0.98  scale 512  2980 tok/s
+update   38  tokens   311296  kl 9.694  flips      0  rho 0.98  scale 512  3015 tok/s
+update 39: gradient overflow, loss scale -> 512.0
+update   39  tokens   319488  kl 9.664  flips      0  rho 0.97  scale 512  3049 tok/s
+update   40  tokens   327680  kl 9.687  flips      0  rho 0.97  scale 512  3083 tok/s
+eval kl 9.430 at 327680 tokens
+update   41  tokens   335872  kl 9.640  flips      0  rho 0.97  scale 512  2901 tok/s
+update   42  tokens   344064  kl 9.357  flips      0  rho 0.97  scale 512  2933 tok/s
+update   43  tokens   352256  kl 9.681  flips      0  rho 0.97  scale 512  2964 tok/s
+update   44  tokens   360448  kl 9.266  flips      0  rho 0.96  scale 512  2994 tok/s
+update   45  tokens   368640  kl 9.344  flips      0  rho 0.96  scale 512  3024 tok/s
+update 46: gradient overflow, loss scale -> 512.0
+update   46  tokens   376832  kl 9.542  flips      0  rho 0.96  scale 512  3053 tok/s
+update   47  tokens   385024  kl 9.618  flips      0  rho 0.96  scale 512  3082 tok/s
+eval kl 9.394 at 385024 tokens
+update   48  tokens   393216  kl 9.331  flips      0  rho 0.96  scale 512  3103 tok/s
+update   49  tokens   401408  kl 9.905  flips      0  rho 0.95  scale 512  2954 tok/s
+update   50  tokens   409600  kl 9.834  flips      0  rho 0.95  scale 512  2980 tok/s
+update   51  tokens   417792  kl 9.008  flips      0  rho 0.95  scale 512  3007 tok/s
+update 52: gradient overflow, loss scale -> 512.0
+update   52  tokens   425984  kl 9.308  flips      0  rho 0.95  scale 512  3032 tok/s
+update   53  tokens   434176  kl 9.728  flips      0  rho 0.94  scale 512  3057 tok/s
+update   54  tokens   442368  kl 9.507  flips      0  rho 0.94  scale 512  3082 tok/s
+update   55  tokens   450560  kl 9.261  flips      0  rho 0.94  scale 512  3106 tok/s
+eval kl 9.605 at 450560 tokens
+update   56  tokens   458752  kl 9.009  flips      0  rho 0.93  scale 512  3124 tok/s
+update   57  tokens   466944  kl 9.217  flips      0  rho 0.93  scale 512  2992 tok/s
+update   58  tokens   475136  kl 9.270  flips      0  rho 0.93  scale 1024  3015 tok/s
+update 59: gradient overflow, loss scale -> 512.0
+update   59  tokens   483328  kl 8.878  flips      0  rho 0.93  scale 512  3038 tok/s
+update   60  tokens   491520  kl 9.832  flips      0  rho 0.92  scale 512  3060 tok/s
+update   61  tokens   499712  kl 9.045  flips      0  rho 0.92  scale 512  3081 tok/s
+update   62  tokens   507904  kl 9.461  flips      0  rho 0.92  scale 512  3103 tok/s
+update   63  tokens   516096  kl 8.880  flips      0  rho 0.91  scale 512  3123 tok/s
+eval kl 9.712 at 516096 tokens
+update   64  tokens   524288  kl 9.394  flips      0  rho 0.91  scale 512  3139 tok/s
+update 65: gradient overflow, loss scale -> 512.0
+update   65  tokens   532480  kl 9.715  flips      0  rho 0.91  scale 512  3021 tok/s
+update   66  tokens   540672  kl 10.050  flips      0  rho 0.90  scale 512  3042 tok/s
+update   67  tokens   548864  kl 8.726  flips      0  rho 0.90  scale 512  3061 tok/s
+update   68  tokens   557056  kl 9.606  flips      0  rho 0.90  scale 512  3081 tok/s
+update   69  tokens   565248  kl 9.125  flips      0  rho 0.89  scale 512  3100 tok/s
+update   70  tokens   573440  kl 9.888  flips      0  rho 0.89  scale 512  3118 tok/s
+update 71: gradient overflow, loss scale -> 512.0
+update   71  tokens   581632  kl 9.604  flips      0  rho 0.88  scale 512  3137 tok/s
+eval kl 9.764 at 581632 tokens
+update   72  tokens   589824  kl 9.696  flips      0  rho 0.88  scale 512  3151 tok/s
+update   73  tokens   598016  kl 9.291  flips      0  rho 0.88  scale 512  3045 tok/s
+update   74  tokens   606208  kl 9.340  flips      0  rho 0.87  scale 512  3063 tok/s
+update   75  tokens   614400  kl 9.605  flips      0  rho 0.87  scale 512  3080 tok/s
+update   76  tokens   622592  kl 9.357  flips      0  rho 0.87  scale 512  3098 tok/s
+update   77  tokens   630784  kl 8.901  flips      0  rho 0.86  scale 1024  3115 tok/s
+update 78: gradient overflow, loss scale -> 512.0
+update   78  tokens   638976  kl 9.458  flips      0  rho 0.86  scale 512  3132 tok/s
+update   79  tokens   647168  kl 8.529  flips      0  rho 0.85  scale 512  3148 tok/s
+eval kl 9.770 at 647168 tokens
+update   80  tokens   655360  kl 8.870  flips      0  rho 0.85  scale 512  3161 tok/s
+update   81  tokens   663552  kl 8.610  flips      0  rho 0.85  scale 512  3064 tok/s
+update   82  tokens   671744  kl 9.607  flips      0  rho 0.84  scale 512  3080 tok/s
+update   83  tokens   679936  kl 9.030  flips      0  rho 0.84  scale 512  3096 tok/s
+update 84: gradient overflow, loss scale -> 512.0
+update   84  tokens   688128  kl 8.391  flips      0  rho 0.83  scale 512  3112 tok/s
+update   85  tokens   696320  kl 9.667  flips      0  rho 0.83  scale 512  3127 tok/s
+update   86  tokens   704512  kl 9.202  flips      0  rho 0.82  scale 512  3142 tok/s
+eval kl 9.694 at 704512 tokens
+update   87  tokens   712704  kl 8.836  flips      0  rho 0.82  scale 512  3154 tok/s
+update   88  tokens   720896  kl 8.883  flips      0  rho 0.82  scale 512  3169 tok/s
+update   89  tokens   729088  kl 9.057  flips      0  rho 0.81  scale 512  3080 tok/s
+update 90: gradient overflow, loss scale -> 512.0
+update   90  tokens   737280  kl 9.545  flips      0  rho 0.81  scale 512  3095 tok/s
+update   91  tokens   745472  kl 8.807  flips      0  rho 0.80  scale 512  3109 tok/s
+update   92  tokens   753664  kl 9.340  flips      0  rho 0.80  scale 512  3123 tok/s
+update   93  tokens   761856  kl 8.965  flips      0  rho 0.79  scale 512  3138 tok/s
+update   94  tokens   770048  kl 9.639  flips      0  rho 0.79  scale 512  3151 tok/s
+eval kl 9.628 at 770048 tokens
+update   95  tokens   778240  kl 8.803  flips      0  rho 0.78  scale 512  3162 tok/s
+update   96  tokens   786432  kl 9.167  flips      0  rho 0.78  scale 512  3176 tok/s
+update 97: gradient overflow, loss scale -> 512.0
+update   97  tokens   794624  kl 8.784  flips      0  rho 0.77  scale 512  3093 tok/s
+update   98  tokens   802816  kl 8.577  flips      1  rho 0.77  scale 512  3107 tok/s
+update   99  tokens   811008  kl 8.460  flips      0  rho 0.76  scale 512  3120 tok/s
+update  100  tokens   819200  kl 9.226  flips      0  rho 0.76  scale 512  3133 tok/s
+update  101  tokens   827392  kl 9.880  flips      0  rho 0.75  scale 512  3146 tok/s
+update  102  tokens   835584  kl 9.486  flips      0  rho 0.75  scale 512  3159 tok/s
+eval kl 9.653 at 835584 tokens
+update 103: gradient overflow, loss scale -> 512.0
+update  103  tokens   843776  kl 9.440  flips      0  rho 0.74  scale 512  3169 tok/s
+update  104  tokens   851968  kl 9.538  flips      0  rho 0.74  scale 512  3181 tok/s
+update  105  tokens   860160  kl 9.209  flips      0  rho 0.73  scale 512  3105 tok/s
+update  106  tokens   868352  kl 9.345  flips      0  rho 0.73  scale 512  3117 tok/s
+update  107  tokens   876544  kl 8.991  flips      0  rho 0.72  scale 512  3129 tok/s
+update  108  tokens   884736  kl 8.734  flips      0  rho 0.72  scale 512  3142 tok/s
+update 109: gradient overflow, loss scale -> 512.0
+update  109  tokens   892928  kl 9.249  flips      0  rho 0.71  scale 512  3153 tok/s
+update  110  tokens   901120  kl 9.131  flips      0  rho 0.71  scale 512  3165 tok/s
+eval kl 9.706 at 901120 tokens
+update  111  tokens   909312  kl 8.864  flips      0  rho 0.70  scale 512  3174 tok/s
+update  112  tokens   917504  kl 9.590  flips      0  rho 0.70  scale 512  3186 tok/s
+update  113  tokens   925696  kl 8.678  flips      0  rho 0.69  scale 512  3114 tok/s
+update  114  tokens   933888  kl 8.884  flips      0  rho 0.69  scale 512  3126 tok/s
+update 115: gradient overflow, loss scale -> 512.0
+update  115  tokens   942080  kl 9.113  flips      0  rho 0.68  scale 512  3137 tok/s
+update  116  tokens   950272  kl 8.825  flips      0  rho 0.68  scale 512  3149 tok/s
+update  117  tokens   958464  kl 8.637  flips      0  rho 0.67  scale 512  3160 tok/s
+update  118  tokens   966656  kl 8.566  flips      0  rho 0.67  scale 512  3171 tok/s
+eval kl 9.540 at 966656 tokens
+update  119  tokens   974848  kl 9.999  flips      0  rho 0.66  scale 512  3179 tok/s
+update  120  tokens   983040  kl 9.023  flips      0  rho 0.66  scale 512  3190 tok/s
+update  121  tokens   991232  kl 8.633  flips      1  rho 0.65  scale 512  3123 tok/s
+update 122: gradient overflow, loss scale -> 512.0
+update  122  tokens   999424  kl 8.927  flips      0  rho 0.65  scale 512  3134 tok/s
+update  123  tokens  1007616  kl 9.184  flips      2  rho 0.64  scale 512  3145 tok/s
+update  124  tokens  1015808  kl 9.360  flips      0  rho 0.64  scale 512  3155 tok/s
+update  125  tokens  1024000  kl 9.084  flips      1  rho 0.63  scale 512  3166 tok/s
+eval kl 9.480 at 1024000 tokens
+update  126  tokens  1032192  kl 8.332  flips      0  rho 0.63  scale 512  3174 tok/s
+update  127  tokens  1040384  kl 9.181  flips      2  rho 0.62  scale 512  3184 tok/s
+update 128: gradient overflow, loss scale -> 512.0
+update  128  tokens  1048576  kl 8.932  flips      2  rho 0.62  scale 512  3194 tok/s
+update  129  tokens  1056768  kl 8.648  flips      0  rho 0.61  scale 512  3131 tok/s
+update 130: gradient overflow, loss scale -> 256.0
+update  130  tokens  1064960  kl 8.774  flips      1  rho 0.61  scale 256  3141 tok/s
+update  131  tokens  1073152  kl 9.434  flips      0  rho 0.60  scale 256  3151 tok/s
+update  132  tokens  1081344  kl 8.809  flips      1  rho 0.59  scale 256  3161 tok/s
+update  133  tokens  1089536  kl 9.741  flips      1  rho 0.59  scale 256  3171 tok/s
+eval kl 9.727 at 1089536 tokens
+update  134  tokens  1097728  kl 9.973  flips      1  rho 0.58  scale 256  3178 tok/s
+update  135  tokens  1105920  kl 9.374  flips      0  rho 0.58  scale 256  3188 tok/s
+update  136  tokens  1114112  kl 9.709  flips      1  rho 0.57  scale 256  3197 tok/s
+update  137  tokens  1122304  kl 9.583  flips      4  rho 0.57  scale 512  3137 tok/s
+update  138  tokens  1130496  kl 9.038  flips      1  rho 0.56  scale 512  3147 tok/s
+update  139  tokens  1138688  kl 8.939  flips      4  rho 0.56  scale 512  3156 tok/s
+update  140  tokens  1146880  kl 9.086  flips      2  rho 0.55  scale 512  3166 tok/s
+update  141  tokens  1155072  kl 9.800  flips      5  rho 0.55  scale 512  3175 tok/s
+eval kl 9.846 at 1155072 tokens
+update  142  tokens  1163264  kl 9.785  flips      7  rho 0.54  scale 512  3182 tok/s
+update 143: gradient overflow, loss scale -> 512.0
+update  143  tokens  1171456  kl 9.122  flips      3  rho 0.54  scale 512  3191 tok/s
+update  144  tokens  1179648  kl 9.659  flips      8  rho 0.53  scale 512  3200 tok/s
+update  145  tokens  1187840  kl 9.507  flips      6  rho 0.53  scale 512  3143 tok/s
+update 146: gradient overflow, loss scale -> 256.0
+update  146  tokens  1196032  kl 9.589  flips      8  rho 0.52  scale 256  3152 tok/s
+update  147  tokens  1204224  kl 9.289  flips      8  rho 0.52  scale 256  3161 tok/s
+update  148  tokens  1212416  kl 9.616  flips     10  rho 0.51  scale 256  3170 tok/s
+update  149  tokens  1220608  kl 8.560  flips      6  rho 0.51  scale 256  3179 tok/s
+eval kl 9.806 at 1220608 tokens
+update  150  tokens  1228800  kl 8.856  flips     11  rho 0.50  scale 256  3185 tok/s
+update  151  tokens  1236992  kl 8.356  flips     12  rho 0.50  scale 256  3194 tok/s
+update  152  tokens  1245184  kl 8.787  flips      7  rho 0.49  scale 512  3202 tok/s
+update  153  tokens  1253376  kl 9.200  flips     11  rho 0.49  scale 512  3149 tok/s
+update  154  tokens  1261568  kl 9.904  flips      9  rho 0.48  scale 512  3157 tok/s
+update  155  tokens  1269760  kl 9.935  flips     10  rho 0.48  scale 512  3166 tok/s
+update  156  tokens  1277952  kl 8.956  flips     11  rho 0.47  scale 512  3174 tok/s
+update 157: gradient overflow, loss scale -> 256.0
+update  157  tokens  1286144  kl 8.436  flips     12  rho 0.47  scale 256  3182 tok/s
+eval kl 9.698 at 1286144 tokens
+update  158  tokens  1294336  kl 8.913  flips      6  rho 0.46  scale 256  3189 tok/s
+update  159  tokens  1302528  kl 8.931  flips      7  rho 0.46  scale 256  3197 tok/s
+update  160  tokens  1310720  kl 8.378  flips     18  rho 0.45  scale 256  3205 tok/s
+update  161  tokens  1318912  kl 9.053  flips      8  rho 0.45  scale 256  3154 tok/s
+update  162  tokens  1327104  kl 9.363  flips     13  rho 0.44  scale 256  3162 tok/s
+update  163  tokens  1335296  kl 9.177  flips     16  rho 0.44  scale 512  3170 tok/s
+update  164  tokens  1343488  kl 9.269  flips     11  rho 0.43  scale 512  3178 tok/s
+update  165  tokens  1351680  kl 8.789  flips     18  rho 0.43  scale 512  3185 tok/s
+eval kl 9.662 at 1351680 tokens
+update  166  tokens  1359872  kl 9.160  flips     21  rho 0.42  scale 512  3192 tok/s
+update  167  tokens  1368064  kl 9.358  flips     25  rho 0.42  scale 512  3200 tok/s
+update  168  tokens  1376256  kl 9.232  flips     20  rho 0.41  scale 512  3208 tok/s
+update 169: gradient overflow, loss scale -> 512.0
+update  169  tokens  1384448  kl 8.643  flips     25  rho 0.41  scale 512  3159 tok/s
+update  170  tokens  1392640  kl 8.774  flips     17  rho 0.40  scale 512  3167 tok/s
+update  171  tokens  1400832  kl 9.361  flips     27  rho 0.40  scale 512  3175 tok/s
+update  172  tokens  1409024  kl 9.046  flips     27  rho 0.39  scale 512  3183 tok/s
+eval kl 9.591 at 1409024 tokens
+update  173  tokens  1417216  kl 9.191  flips     32  rho 0.39  scale 512  3189 tok/s
+update  174  tokens  1425408  kl 9.453  flips     14  rho 0.38  scale 512  3196 tok/s
+update 175: gradient overflow, loss scale -> 512.0
+update  175  tokens  1433600  kl 9.352  flips     30  rho 0.38  scale 512  3203 tok/s
+update  176  tokens  1441792  kl 9.362  flips     29  rho 0.38  scale 512  3211 tok/s
+update  177  tokens  1449984  kl 9.579  flips     26  rho 0.37  scale 512  3164 tok/s
+update  178  tokens  1458176  kl 9.172  flips     37  rho 0.37  scale 512  3171 tok/s
+update  179  tokens  1466368  kl 9.330  flips     41  rho 0.36  scale 512  3178 tok/s
+update  180  tokens  1474560  kl 9.501  flips     44  rho 0.36  scale 512  3186 tok/s
+eval kl 9.617 at 1474560 tokens
+update  181  tokens  1482752  kl 9.700  flips     31  rho 0.35  scale 512  3191 tok/s
+update 182: gradient overflow, loss scale -> 512.0
+update  182  tokens  1490944  kl 8.321  flips     44  rho 0.35  scale 512  3198 tok/s
+update  183  tokens  1499136  kl 9.170  flips     28  rho 0.35  scale 512  3205 tok/s
+update  184  tokens  1507328  kl 8.931  flips     40  rho 0.34  scale 512  3212 tok/s
+update  185  tokens  1515520  kl 9.022  flips     37  rho 0.34  scale 512  3167 tok/s
+update 186: gradient overflow, loss scale -> 256.0
+update  186  tokens  1523712  kl 8.670  flips     61  rho 0.33  scale 256  3174 tok/s
+update  187  tokens  1531904  kl 8.570  flips     54  rho 0.33  scale 256  3181 tok/s
+update  188  tokens  1540096  kl 9.244  flips     39  rho 0.33  scale 256  3188 tok/s
+eval kl 9.621 at 1540096 tokens
+update  189  tokens  1548288  kl 9.403  flips     50  rho 0.32  scale 256  3194 tok/s
+update  190  tokens  1556480  kl 9.285  flips     58  rho 0.32  scale 256  3200 tok/s
+update  191  tokens  1564672  kl 9.175  flips     65  rho 0.32  scale 256  3207 tok/s
+update  192  tokens  1572864  kl 9.611  flips     51  rho 0.31  scale 512  3214 tok/s
+update  193  tokens  1581056  kl 8.558  flips     55  rho 0.31  scale 512  3171 tok/s
+update  194  tokens  1589248  kl 8.965  flips     57  rho 0.30  scale 512  3178 tok/s
+update  195  tokens  1597440  kl 9.132  flips     75  rho 0.30  scale 512  3184 tok/s
+update  196  tokens  1605632  kl 8.375  flips     64  rho 0.30  scale 512  3191 tok/s
+eval kl 9.614 at 1605632 tokens
+update  197  tokens  1613824  kl 8.778  flips     83  rho 0.29  scale 512  3196 tok/s
+update 198: gradient overflow, loss scale -> 512.0
+update  198  tokens  1622016  kl 9.314  flips     69  rho 0.29  scale 512  3202 tok/s
+update  199  tokens  1630208  kl 9.317  flips     64  rho 0.29  scale 512  3209 tok/s
+update  200  tokens  1638400  kl 9.085  flips     67  rho 0.28  scale 512  3215 tok/s
+update  201  tokens  1646592  kl 8.477  flips     84  rho 0.28  scale 512  3174 tok/s
+update  202  tokens  1654784  kl 8.921  flips     71  rho 0.28  scale 512  3180 tok/s
+update  203  tokens  1662976  kl 8.745  flips     87  rho 0.27  scale 512  3187 tok/s
+update  204  tokens  1671168  kl 9.174  flips     74  rho 0.27  scale 512  3193 tok/s
+eval kl 9.599 at 1671168 tokens
+update 205: gradient overflow, loss scale -> 512.0
+update  205  tokens  1679360  kl 8.669  flips     73  rho 0.27  scale 512  3198 tok/s
+update  206  tokens  1687552  kl 8.635  flips     87  rho 0.27  scale 512  3204 tok/s
+update  207  tokens  1695744  kl 8.277  flips     93  rho 0.26  scale 512  3210 tok/s
+update  208  tokens  1703936  kl 8.693  flips     99  rho 0.26  scale 512  3216 tok/s
+update  209  tokens  1712128  kl 9.092  flips    104  rho 0.26  scale 512  3177 tok/s
+update  210  tokens  1720320  kl 8.491  flips     89  rho 0.25  scale 512  3183 tok/s
+update 211: gradient overflow, loss scale -> 512.0
+update  211  tokens  1728512  kl 8.585  flips    132  rho 0.25  scale 512  3189 tok/s
+eval kl 9.561 at 1728512 tokens
+update  212  tokens  1736704  kl 8.877  flips     97  rho 0.25  scale 512  3194 tok/s
+update  213  tokens  1744896  kl 9.204  flips    118  rho 0.25  scale 512  3200 tok/s
+update  214  tokens  1753088  kl 9.010  flips    143  rho 0.24  scale 512  3206 tok/s
+update  215  tokens  1761280  kl 9.402  flips     95  rho 0.24  scale 512  3212 tok/s
+update  216  tokens  1769472  kl 9.029  flips    100  rho 0.24  scale 512  3218 tok/s
+update 217: gradient overflow, loss scale -> 512.0
+update  217  tokens  1777664  kl 9.487  flips    108  rho 0.24  scale 512  3179 tok/s
+update  218  tokens  1785856  kl 9.120  flips    145  rho 0.24  scale 512  3185 tok/s
+update  219  tokens  1794048  kl 8.841  flips    144  rho 0.23  scale 512  3191 tok/s
+eval kl 9.509 at 1794048 tokens
+update  220  tokens  1802240  kl 8.722  flips     99  rho 0.23  scale 512  3195 tok/s
+update 221: gradient overflow, loss scale -> 256.0
+update  221  tokens  1810432  kl 9.655  flips    137  rho 0.23  scale 256  3201 tok/s
+update  222  tokens  1818624  kl 8.944  flips    138  rho 0.23  scale 256  3207 tok/s
+update  223  tokens  1826816  kl 8.894  flips    111  rho 0.23  scale 256  3213 tok/s
+update  224  tokens  1835008  kl 9.103  flips    131  rho 0.22  scale 256  3219 tok/s
+update  225  tokens  1843200  kl 9.716  flips    145  rho 0.22  scale 256  3182 tok/s
+update  226  tokens  1851392  kl 9.121  flips    147  rho 0.22  scale 256  3187 tok/s
+update  227  tokens  1859584  kl 8.424  flips    155  rho 0.22  scale 512  3193 tok/s
+eval kl 9.499 at 1859584 tokens
+update  228  tokens  1867776  kl 8.626  flips    148  rho 0.22  scale 512  3197 tok/s
+update  229  tokens  1875968  kl 8.994  flips    173  rho 0.22  scale 512  3203 tok/s
+update  230  tokens  1884160  kl 9.084  flips    149  rho 0.21  scale 512  3209 tok/s
+update  231  tokens  1892352  kl 9.075  flips    172  rho 0.21  scale 512  3214 tok/s
+update  232  tokens  1900544  kl 8.636  flips    176  rho 0.21  scale 512  3220 tok/s
+update 233: gradient overflow, loss scale -> 512.0
+update  233  tokens  1908736  kl 9.040  flips    192  rho 0.21  scale 512  3184 tok/s
+update  234  tokens  1916928  kl 9.097  flips    157  rho 0.21  scale 512  3189 tok/s
+update  235  tokens  1925120  kl 9.636  flips    212  rho 0.21  scale 512  3195 tok/s
+eval kl 9.502 at 1925120 tokens
+update  236  tokens  1933312  kl 9.255  flips    204  rho 0.21  scale 512  3199 tok/s
+update  237  tokens  1941504  kl 9.037  flips    177  rho 0.21  scale 512  3205 tok/s
+update  238  tokens  1949696  kl 8.876  flips    218  rho 0.21  scale 512  3210 tok/s
+update 239: gradient overflow, loss scale -> 512.0
+update  239  tokens  1957888  kl 8.811  flips    215  rho 0.20  scale 512  3215 tok/s
+update 240: gradient overflow, loss scale -> 256.0
+update  240  tokens  1966080  kl 9.026  flips    189  rho 0.20  scale 256  3221 tok/s
+update  241  tokens  1974272  kl 9.257  flips    219  rho 0.20  scale 256  3186 tok/s
+update  242  tokens  1982464  kl 9.289  flips    198  rho 0.20  scale 256  3191 tok/s
+update  243  tokens  1990656  kl 9.435  flips    203  rho 0.20  scale 256  3197 tok/s
+eval kl 9.538 at 1990656 tokens
+update  244  tokens  1998848  kl 8.762  flips    200  rho 0.20  scale 256  3201 tok/s
+update  245  tokens  2007040  kl 9.069  flips    236  rho 0.20  scale 256  3206 tok/s
+update  246  tokens  2015232  kl 9.931  flips    296  rho 0.20  scale 512  3211 tok/s
+update  247  tokens  2023424  kl 8.402  flips    280  rho 0.20  scale 512  3216 tok/s
+update  248  tokens  2031616  kl 8.852  flips    222  rho 0.20  scale 512  3222 tok/s
+update  249  tokens  2039808  kl 9.583  flips    263  rho 0.20  scale 512  3187 tok/s
+update  250  tokens  2048000  kl 9.260  flips    273  rho 0.20  scale 512  3192 tok/s
+eval kl 9.555 at 2048000 tokens
+time per sequence (ms): teacher 24.5, head 8.0, ane backward 6.2, accumulate 5.3, ane forward 3.1, embed 0.4, update 0.2; teacher text generation 30.7
+training throughput excluding text generation: 5355 tok/s

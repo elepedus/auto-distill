@@ -134,3 +134,23 @@ update is normalised to about ±ρ per entry, so pure noise drives the accumulat
 
 **Speed:** about 90 ms per step, or 2,900 tokens/s overall; 4,600 tokens/s excluding text generation. The
 ANE accounts for 8.8 ms of each step (forward 2.9, backward 5.9); most of the rest is the 350M teacher.
+
+**Accumulating more tokens per update hurt, at equal tokens.** Same seed, data and budget (2.05M tokens), only
+tokens per update varied (held-out KL):
+
+| tokens seen | 256 per update (8,000 updates) | 2k per update (1,000) | 8k per update (250) |
+|---|---|---|---|
+| 1.09M | 7.84 | 9.67 | 9.73 |
+| 1.47M | 7.69 | 7.80 | 9.62 |
+| 2.05M | 7.43 | 7.67 | 9.56 |
+
+Receipts: [`results/ane-accum1-2026-11-23.txt`](results/ane-accum1-2026-11-23.txt),
+[`results/ane-accum8-2026-11-23.txt`](results/ane-accum8-2026-11-23.txt),
+[`results/ane-accum32-2026-11-23.txt`](results/ane-accum32-2026-11-23.txt).
+
+TTF's step and Adam's step are both normalised, so each update moves the parameters by about the same amount
+whatever its batch. Fewer, larger updates therefore move the model less per token: the 8k run flipped almost no
+trits until halfway through. Better signal-to-noise does stop the noise flips (no early bump), but θ, τ, ρ and
+the learning rate are all calibrated in updates. They have to be retuned for each tokens-per-update setting, not
+carried over. Accumulation still raises throughput, 5,300 tokens/s against 4,100 excluding text generation,
+because the per-update work is shared.
