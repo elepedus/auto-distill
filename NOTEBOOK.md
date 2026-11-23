@@ -98,3 +98,15 @@ About 1.5 hours is deliberately unallocated.
     ~0.13, while some layers sit at gmax ~4e-6 with 93% exact zeros, at scale 32–64. So the "overflow" events
     must come from an internal ANE intermediate, not the gradient outputs, and the scale backs off into
     underflow. Next: find which tensor goes nonfinite, and give each tensor its own scaling.
+- 2026-11-23 22:45. **Phase 1, first results** (queue in the scratchpad, `runs/phase1`).
+  - `best-s0` (`--hyper 1e-3,12.8,1953,0.8`, P=1) hit "every member diverged" (nonfinite forward) within 40 s.
+    Its log was lost to stdout buffering; 9867c25 line-buffers stdout.
+  - `best-fix2048` (fixed loss scale 2048) overflowed on 7271 of ~7400 updates and never learned (KL 9.7
+    throughout). So the overflow scales with the loss scale and is systematic. Suspect dx growing through the
+    backward pass (RMSNorm backward on a tiny residual stream).
+  - **Float baseline built** (`float-train`, 6d80af5): fp32 MLX, same architecture and pipeline, 20.2M
+    parameters including the tied embedding. At 256k tokens it reaches **4.36** (lr 3e-3), 5.29 (1e-3) and
+    5.29 (3e-4). Ternary-ANE P=1 is at ~9.5 at that point.
+  - **Decision.** The float gap is far above 1 nat, so build `float-train --ternary` (fp32 GPU gradients with the
+    same TTF) to separate fp16 numerics from ternary capacity. In parallel, a numerics agent is finding the
+    overflow source and adding per-tensor power-of-two gradient prescales.
