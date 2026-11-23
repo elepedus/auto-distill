@@ -23,6 +23,10 @@ let package = Package(
         .target(name: "LMLoad", dependencies: mlx),
         .executableTarget(name: "distill", dependencies: mlx + ["LMLoad"]),
         .executableTarget(
+            name: "lfm2-ane",
+            dependencies: mlx + ["LMLoad", .product(name: "ANE", package: "swift-ane")]
+        ),
+        .executableTarget(
             name: "ternary-probe",
             dependencies: [.product(name: "ANE", package: "swift-ane")],
             linkerSettings: [.linkedFramework("Accelerate")]

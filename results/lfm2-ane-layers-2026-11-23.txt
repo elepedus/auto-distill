@@ -1,0 +1,7 @@
+# lfm2-ane receipt: 2026-11-23T18:06Z, Apple M2 Max, macOS 27.2.1. LFM2-350M, ternary (absmean per row) weights, 256 wikitext-2 tokens; ANE vs MLX fp32 reference reading the same IOSurfaces
+reference vs mlx-swift-lm logits: rel L2 0.0065, argmax agreement 98.0%
+residual-stream max|h| per layer input: 0 1 1 1 0 1 1 0 17 17 17 17 17 17 17 8 7
+layer  0 conv  compile 0.4s  eval 5.00 ms |  r: rel L2 0.00222, max|ref| 0.0501, nonfinite 0  m: rel L2 0.00179, max|ref| 0.0653, nonfinite 0  y: rel L2 0.00050, max|ref| 0.213, nonfinite 0
+layer  2 attn  compile 0.5s  eval 6.05 ms |  r: rel L2 0.00205, max|ref| 0.0596, nonfinite 0  m: rel L2 0.00274, max|ref| 0.0458, nonfinite 0  y: rel L2 0.00060, max|ref| 0.956, nonfinite 0
+layer 14 attn  compile 0.5s  eval 5.45 ms |  r: rel L2 0.00205, max|ref| 0.157, nonfinite 0  m: rel L2 0.00126, max|ref| 0.266, nonfinite 0  y: rel L2 0.00067, max|ref| 17, nonfinite 0
+layer 15 conv  compile 0.4s  eval 4.54 ms |  r: rel L2 0.00163, max|ref| 0.0607, nonfinite 0  m: rel L2 0.00116, max|ref| 0.366, nonfinite 0  y: rel L2 0.00045, max|ref| 8.24, nonfinite 0

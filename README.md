@@ -49,3 +49,29 @@ swift run -c release ternary-probe
 ```
 
 Building needs a local checkout of swift-ane (see `Package.swift`), which is not published yet.
+
+## `lfm2-ane`: a ternary LFM2 layer on the Apple Neural Engine
+
+```sh
+swift run -c release lfm2-ane TEXTFILE [LAYER...]
+```
+
+Runs one LFM2-350M decoder layer with ternary weights (per-row absmean scale, BitNet style) on the ANE and
+compares it with an MLX fp32 reference. The inputs are the real hidden states of bf16 LFM2-350M on the text.
+Weights, scales and constants are runtime inputs uploaded once; after that, MLX reads the ANE's own input
+and output IOSurfaces in place, so both engines compute from the same bytes.
+
+On an M2 Max, conv and attention layers at both ends of the network match the reference to 0.05–0.07% (relative
+L2) at the layer output, with no non-finite values, in 4.5–6 ms per 256 tokens per layer. Receipt:
+[`results/lfm2-ane-layers-2026-11-23.txt`](results/lfm2-ane-layers-2026-11-23.txt).
+
+How the layer is built for the ANE:
+- **RMSNorm** divides by each row's max |x| before squaring and sums the squares with a matmul (wide
+  accumulator), with ε rescaled to match. No finite input can overflow it.
+- **Attention** uses exp(s − max) and two matmuls for numerator and denominator, with V scaled by 2⁸ against
+  underflow, following swift-ane's attention study. GQA runs as 16 full heads.
+- **The conv block** uses three matmuls instead of splitting one along the last axis (M2's width-offset slice
+  cliff), and shifts rows for the causal conv with 0/1 matrices, which is exact.
+- **SiLU** is the explicit `a / (1 + exp(-a))`; swift-ane measured the native op as inaccurate.
+- **Constants are inputs.** Several `BLOBFILE` constants in one in-memory MIL program fail to load
+  (`verifyBundleAtPath: invalid model`) on macOS 27.2.1; a single one works.
