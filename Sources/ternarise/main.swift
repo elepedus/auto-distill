@@ -1,6 +1,7 @@
 // Ternarise a pretrained LFM2-350M and recover it by distillation against its own bf16 base.
 //   ternarise measure [--init absmean|twn] [--keep-fp 0,15|all] [--text FILE] [--eval 8] [--jsonl PATH]
 //   ternarise train   [measure options] [--ste] [--tokens 2048000] [--round 256000] [--seed 0] [--lr 1e-5]
+//                     [--save DIR --save-every N --resume DIR --schedule cosine|wsd --decay-frac 0.15 --acc fp32|int8]
 //                     [--hyper lr,theta,tau,rho] [--acc-init zero|residual] [--kappa 1] [--pool 256] [--ppl-every 1024000]
 // Every linear in every decoder layer becomes trits x per-row scale (embedding/tied head, norms, conv taps stay float).
 // train: trits by TTF (float-train --ternary's kernel and maths; no master weights), the rest by Adam. --ste: fp32 master
@@ -17,6 +18,7 @@ import Tokenizers
 func option(_ name: String) -> String? { CommandLine.arguments.firstIndex(of: "--" + name).map { CommandLine.arguments[$0 + 1] } }
 func num(_ x: Float) -> String { x.isFinite ? "\(x)" : "null" }
 let T = 256, V = 65536, beta2: Float = 0.95
+let int8Acc = option("acc") == "int8"  // accumulator in int8 units of theta/127, stochastic rounding (ttfLeanKernel MODE 2)
 
 /// Trits x row scale. `weight` holds the trits (float; TTF rewrites it each step), `scale` is trained by Adam.
 final class TernaryLinear: Linear {
@@ -62,9 +64,14 @@ final class Trits {
         rows = beta2 * rows + (1 - beta2) * g2.mean(axis: 1).reshaped(1, n); cols = beta2 * cols + (1 - beta2) * g2.mean(axis: 0).reshaped(1, k)
         let correction = 1 - pow(beta2, Float(t)), r = rows / correction
         let params = stacked([MLXArray(rho), MLXArray(leak), MLXArray(theta), r.mean()], axis: 0)
-        let out = ttfKernel([g.reshaped(-1), acc, r.reshaped(-1), (cols / correction).reshaped(-1), params, buffer.array],
-                            template: [("N", n), ("K", k)], grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
-                            outputShapes: [[n * k], [n * k]], outputDTypes: [.float32, .float32])
+        let rv = r.reshaped(-1), cv = (cols / correction).reshaped(-1)
+        let out = int8Acc
+            ? ttfLeanKernel([g.reshaped(-1), acc, rv, cv, params, buffer.array, MLXArray(UInt32(t))],
+                            template: [("N", n), ("K", k), ("MODE", 2), ("T", DType.int8)], grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
+                            outputShapes: [[n * k], [n * k]], outputDTypes: [.int8, .float32])
+            : ttfKernel([g.reshaped(-1), acc, rv, cv, params, buffer.array],
+                        template: [("N", n), ("K", k)], grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
+                        outputShapes: [[n * k], [n * k]], outputDTypes: [.float32, .float32])
         acc = out[0]
         return out[1].sum()
     }
@@ -90,13 +97,13 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     }
     func emit(_ line: String) { try? jsonl?.write(contentsOf: Data((line + "\n").utf8)) }
 
-    let (teacher, dir) = try await loadLLM("LiquidAI/LFM2-350M")
+    let (teacher, baseDir) = try await loadLLM("LiquidAI/LFM2-350M")
     let (student, _) = try await loadLLM("LiquidAI/LFM2-350M")
     let keepArg = option("keep-fp") ?? ""
     let keep = Set(keepArg == "all" ? Array(0 ..< 64) : keepArg.split(separator: ",").map { Int($0)! })
 
     // Wikitext-2 test: BOS + 511 tokens x 64 windows, as `distill eval`.
-    let tokenizer = try await AutoTokenizer.from(modelFolder: dir)
+    let tokenizer = try await AutoTokenizer.from(modelFolder: baseDir)
     let text = try String(contentsOf: URL(filePath: option("text") ?? "/tmp/wikitext2-test-join.txt"), encoding: .utf8)
     let ids = tokenizer.encode(text: text, addSpecialTokens: false).prefix(64 * 511).map(Int32.init)
     let windows = concatenated([MLXArray.full([64, 1], values: MLXArray(Int32(tokenizer.bosTokenId ?? 1))), MLXArray(ids, [64, 511])], axis: 1)
@@ -109,6 +116,14 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         return exp(-nll / Float(64 * 511)).item(Float.self)
     }
 
+    // --resume: checkpoint arrays (trits, scales, floats) and optimiser state.
+    var ckpt: [String: MLXArray] = [:], opt: [String: MLXArray] = [:], resumeStep = 0, resumeTokens = 0
+    if let r = option("resume") {
+        ckpt = try loadArrays(url: URL(filePath: r).appending(path: "model.safetensors"))
+        let (o, meta) = try loadArraysAndMetadata(url: URL(filePath: r).appending(path: "optim.safetensors"))
+        opt = o; resumeStep = Int(meta["step"]!)!; resumeTokens = Int(meta["tokens"]!)!
+        print("resume \(r): step \(resumeStep), \(resumeTokens) tokens")
+    }
     // Replace layer linears; TTF state is keyed by the flattened parameter name of the trits.
     var tritState: [String: Trits] = [:], ternaryCount = 0, keptCount = 0, zeroTrits = 0, replaced: [(String, Module)] = []
     for (path, m) in student.leafModules().flattened() {
@@ -119,12 +134,16 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         if keep.contains(layer) { keptCount += w.size; m.freeze(); replaced.append((path, m)); continue }
         ternaryCount += w.size
         if ste { replaced.append((path, STELinear(weight: w, bias: nil))); continue }
-        let (t, s) = quantise(w, twn: twn)
+        var (t, s) = quantise(w, twn: twn)
+        if let ct = ckpt[path + ".trits"] { t = ct.asType(.float32); s = ckpt[path + ".scale"]! }
         zeroTrits += (t .== 0).sum().item(Int.self)
         var tr: Trits?
         if training {
-            let acc = residual ? clip(kappa * 2 * theta * (w / s.expandedDimensions(axis: 1) - t), min: -0.999 * theta, max: 0.999 * theta) : MLXArray.zeros(like: w)
+            var acc = residual ? clip(kappa * 2 * theta * (w / s.expandedDimensions(axis: 1) - t), min: -0.999 * theta, max: 0.999 * theta) : MLXArray.zeros(like: w)
+            if int8Acc { acc = round(acc * (127 / theta)).asType(.int8) }  // residual init in int8 units of theta/127
+            if let a = opt["acc/" + path] { acc = a }
             tr = Trits(trits: t, acc: acc)
+            if let r = opt["rows/" + path], let c = opt["cols/" + path] { tr!.rows = r; tr!.cols = c }
             tritState[path + ".weight"] = tr
         }
         let l = TernaryLinear(trits: tr?.value ?? t, scale: s)
@@ -133,6 +152,9 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     }
     student.update(modules: ModuleChildren.unflattened(replaced))
     student.update(parameters: student.parameters().mapValues { $0.asType(.float32) })  // norms, embedding, conv taps; trits are exact
+    if !ckpt.isEmpty {
+        student.update(parameters: ModuleParameters.unflattened(ckpt.filter { !$0.key.hasSuffix(".trits") }.map { ($0.key, $0.value.asType(.float32)) }))
+    }
     eval(student)
     let total = student.parameters().flattened().reduce(0) { $0 + $1.1.size }
     print("ternarise \(mode): \(ternaryCount) ternary of \(total) parameters" + (ste ? " (STE reference)" : " (\(twn ? "twn" : "absmean"), \(String(format: "%.3f", Double(zeroTrits) / Double(max(ternaryCount, 1)))) zero trits)") + "; keep-fp \(keep.sorted())")
@@ -176,10 +198,35 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     print("train: \(updates) updates of \(T) tokens; lr \(lr)" + (ste ? "; STE" : "; TTF theta \(theta) tau \(tau) rho x \(rhoScale) acc-init \(residual ? "residual k=\(kappa)" : "zero")"))
     let lossGrad = valueAndGrad(model: student) { model, a in klLoss(model as! any LLMModel, a[0], a[1]) }
     var m: [String: MLXArray] = [:], v: [String: MLXArray] = [:]
+    for (k, a) in opt { if k.hasPrefix("m/") { m[String(k.dropFirst(2))] = a } else if k.hasPrefix("v/") { v[String(k.dropFirst(2))] = a } }
+    let wsd = (option("schedule") ?? "cosine") == "wsd", decayFrac = Float(option("decay-frac") ?? "0.15")!
+    let saveDir = option("save").map { URL(filePath: $0) }, saveEvery = Int(option("save-every") ?? "2048000")!
+    var nextSave = (resumeTokens / saveEvery + 1) * saveEvery
+    /// Atomic checkpoint: tmp dir, then rename over DIR. Trits as int8 [N,K], every other parameter under its module name.
+    func save(_ step: Int, _ tokens: Int) throws {
+        guard let dir = saveDir else { return }
+        var model: [String: MLXArray] = [:], optim: [String: MLXArray] = [:]
+        for (k, p) in student.parameters().flattened() {
+            if let tr = tritState[k] { model[String(k.dropLast(7)) + ".trits"] = tr.value.asType(.int8); optim["acc/" + String(k.dropLast(7))] = tr.acc
+                optim["rows/" + String(k.dropLast(7))] = tr.rows; optim["cols/" + String(k.dropLast(7))] = tr.cols } else { model[k] = p }
+        }
+        for (k, a) in m { optim["m/" + k] = a }
+        for (k, a) in v { optim["v/" + k] = a }
+        let fm = FileManager.default, tmp = dir.deletingLastPathComponent().appending(path: dir.lastPathComponent + ".tmp")
+        try? fm.removeItem(at: tmp); try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+        try Data(contentsOf: baseDir.appending(path: "config.json")).write(to: tmp.appending(path: "config.json"))  // resolves the hub symlink
+        try MLX.save(arrays: model, url: tmp.appending(path: "model.safetensors"))
+        try MLX.save(arrays: optim, metadata: ["step": String(step), "tokens": String(tokens)], url: tmp.appending(path: "optim.safetensors"))
+        let old = dir.deletingLastPathComponent().appending(path: dir.lastPathComponent + ".old")
+        try? fm.removeItem(at: old)
+        if fm.fileExists(atPath: dir.path) { try fm.moveItem(at: dir, to: old) }
+        try fm.moveItem(at: tmp, to: dir); try? fm.removeItem(at: old)
+        print("checkpoint \(dir.path) at \(tokens) tokens")
+    }
 
-    MLXRandom.seed(UInt64(seed))
+    MLXRandom.seed(UInt64(seed + resumeStep))
     var pool: [([Int32], Int, Int)] = [], steps: [MLXArray] = []
-    var tokensSeen = 0, nextRound = roundTokens, nextPpl = pplEvery, recent = 0.0, recentAlpha = 0.0, recentCount = 0
+    var tokensSeen = resumeTokens, nextRound = (resumeTokens / roundTokens + 1) * roundTokens, nextPpl = (resumeTokens / pplEvery + 1) * pplEvery, recent = 0.0, recentAlpha = 0.0, recentCount = 0
     var flipsRecent: Float = 0, flipsTotal: Float = 0, generation = 0.0, working = 0.0
     let started = Date()
     func report(_ tokens: Int, withPpl: Bool) {
@@ -188,8 +235,8 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         emit("{\"type\":\"eval\",\"tokens\":\(tokens),\"member\":0,\"kl\":\(num(h.kl)),\"alpha\":\(num(h.alpha)),\"lr\":\(lr)\(p),\"flips_total\":\(flipsTotal)}")
         print(String(format: "eval at %d tokens: held-out kl %.4f alpha %.4f", tokens, h.kl, h.alpha) + (withPpl ? String(format: "  ppl %.2f", ppl) : "") + String(format: "  flips total %.0f", flipsTotal))
     }
-    report(0, withPpl: true)
-    for step in 1 ... updates {
+    report(resumeTokens, withPpl: true)
+    for step in (resumeStep + 1) ... max(updates, resumeStep + 1) {
         if pool.isEmpty {
             let t0 = Date(), g = try generate(poolSize, keep: true)
             steps = g.steps; pool = (0 ..< poolSize).map { (g.tokens[$0], 0, $0) }; pool.shuffle()
@@ -200,7 +247,8 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         tokensSeen += T
         let t0 = Date()
         let (loss, grads) = lossGrad(student, [tokens, target])
-        let cosine = 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, updates - warmup))))
+        let decayStart = max(warmup, Int(Float(updates) * (1 - decayFrac)))
+        let cosine = wsd ? 1 - max(0, min(1, Float(step - decayStart) / Float(max(1, updates - decayStart)))) : 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, updates - warmup))))
         let rhoNow = (step < warmup ? 0.25 + 0.75 * Float(step) / Float(warmup) : 0.2 + 0.8 * cosine) * rhoScale
         let rate = lr * (step < warmup ? Float(step) / Float(warmup) : 0.1 + 0.9 * cosine)
         let b1 = pow(0.9, Float(step)), b2 = pow(0.999, Float(step))
@@ -226,6 +274,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
             emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":[\(num(kl))],\"alpha\":[\(num(al))],\"flips\":[\(num(fl))]}")
             flipsRecent = 0; recent = 0; recentAlpha = 0; recentCount = 0
         }
+        if tokensSeen >= nextSave || step == updates { if tokensSeen >= nextSave { nextSave += saveEvery }; try save(step, tokensSeen) }
         if tokensSeen >= nextRound || step == updates {
             nextRound += roundTokens
             let withPpl = step == updates || tokensSeen >= nextPpl
