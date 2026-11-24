@@ -40,8 +40,8 @@ receipt is [results/ane-vs-gpu-2026-11-24.md](results/ane-vs-gpu-2026-11-24.md).
 | 2b, forward | `--bound` (parameter caps derived from the forward's product chain). |
 | 3, comparisons | 3 seeds per arm at 2.05M tokens: GPU ternary, ANE bound, ANE bound+prescale. Prescale-only and neither diverged. PBT-8 with and without prescale. Long runs at 8.2M tokens: ANE, GPU ternary and GPU float. |
 
-An ANE job and a GPU job ran concurrently most of the night, so **wall-clock times from tonight are not
-throughput measurements**.
+An ANE job and a GPU job ran concurrently most of the night, so the wall-clock times of those runs are not
+throughput measurements. A clean throughput measurement ran at the end (What's next §3).
 
 ## Mistakes and caveats (plainly)
 
@@ -74,9 +74,20 @@ throughput measurements**.
    activation monitoring that tightens the caps. Bound attention's numerator.
 2. **Capacity.** At 8.2M tokens float wins by about 0.2 nats. Try a wider ternary student (d 384 or 512) on the
    ANE. The population programs already handle width.
-3. **Clean throughput measurement**, with one job at a time. Teacher text generation (~30–40 ms per sequence)
-   and the GPU head and update dominate; the ANE trunk is a small fraction. Larger generation batches, or
-   P>1 sharing one teacher pass, are the cheap wins.
+3. **Speed: the GPU side is the bottleneck, not the ANE.** Measured at 05:45, one job at a time, 256k tokens,
+   excluding teacher text generation:
+
+   | path | throughput |
+   |---|---|
+   | ANE P=1 | 4239 tok/s |
+   | ANE P=8 | 11,455 member-tok/s |
+   | GPU ternary | 5500 tok/s |
+   | GPU fp32 | 5740 tok/s |
+
+   At P=1 the ANE trunk is only 9.9 ms of a 60 ms sequence. The rest is teacher scoring (24.6), Adam/TTF update
+   (11.0), head (7.9) and accumulation (6.9), all on the GPU. Text generation adds 30.5 ms per sequence on top.
+   Cheap wins: fuse the update and accumulation kernels, batch teacher generation, and use P>1 to amortise the
+   teacher.
 4. **PBT at longer budgets.** The 8.2M-token runs used fixed default settings. PBT drifted to τ 3–4k, which is
    worth adopting as the default if it holds.
 5. **Back to the main goal.** Use the now-sound ANE student pipeline for dataset-free transfer into larger

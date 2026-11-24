@@ -220,3 +220,8 @@ About 1.5 hours is deliberately unallocated.
     accumulate 8.1, ANE backward 6.7, ANE forward 3.6, plus teacher generation 33.8. That is 3807 tok/s
     excluding generation, and the ANE trunk is ~15% of the non-generation time.
   - A short clean-throughput queue is running (one job at a time).
+- 2026-11-24 05:55. **Clean throughput** (`results/throughput-2026-11-24.md`), excluding text generation:
+  - ANE P=1: 4239 tok/s. ANE P=8: 11,455 member-tok/s. GPU ternary: 5500. GPU fp32: 5740.
+  - The ANE trunk is 9.9 of 60 ms per sequence at P=1; the GPU-side teacher scoring, update, head and
+    accumulation dominate.
+  - Phase 4 done: MORNING.md written.
