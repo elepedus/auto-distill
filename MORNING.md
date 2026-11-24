@@ -24,7 +24,7 @@ receipt is [results/ane-vs-gpu-2026-11-24.md](results/ane-vs-gpu-2026-11-24.md).
   - `--bound` clamps the float parameters after each Adam step. Without it, 3 of 4 runs diverged; with it, 0 of 7
     did.
   - The bound is practical, not a worst-case proof: the worst-case bounds are below the init values.
-- **Float fp32 leads ternary by ~0.2 nats at 8.2M tokens** (1.607 / pending vs ~1.82). At 2.05M tokens there
+- **Float fp32 leads ternary by ~0.2 nats at 8.2M tokens** (1.607 / 1.555 vs ~1.82). At 2.05M tokens there
   was no gap. This is the first sign that ternary capacity matters at d 256.
 - **PBT-8 adds little at 2.05M tokens:** 2.172 vs 2.16–2.25 for P=1. Its value tonight was robustness: it
   replaces diverged members.

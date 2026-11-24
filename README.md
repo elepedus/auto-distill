@@ -174,7 +174,7 @@ optional.
 
 **Long runs (8.2M tokens), held-out KL:** ANE ternary (`--grad-prescale --bound`) seed 0 1.794; GPU ternary seed 0 1.832,
 seed 1 1.811; GPU float fp32 seed 0 1.607. The ANE matches GPU ternary (one ANE seed, so a tie, not a win); float leads
-ternary by about 0.2 nats, the first sign of ternary capacity mattering at d = 256. ANE seed 1 and float seed 1: pending.
+ternary by about 0.2 nats, the first sign of ternary capacity mattering at d = 256. Float seed 1: 1.555. ANE seed 1: pending.
 Bound-only at 2.05M: 2.218 ± 0.05 (3 seeds).
 
 **Earlier numbers were wrong.** The first P = 1 results (held-out KL 7.4–9.9 at 2.05M tokens, and the "trunk learns
