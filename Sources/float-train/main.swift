@@ -126,26 +126,32 @@ func klLoss(_ p: [MLXArray], _ tokens: MLXArray, _ target: MLXArray) -> MLXArray
 
 // Teacher and data, as ane-train.
 let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
-@MainActor func generate(_ count: Int) throws -> [[Int32]] {
-    var x = MLXRandom.randInt(0 ..< V, [count, 1]).asType(.int32), rows = [x]
+@MainActor func generate(_ count: Int, keep: Bool = false) throws -> (tokens: [[Int32]], targets: MLXArray?) {
+    // keep: also store the decode-step teacher log-probs [count, T, V] (bf16) as KL targets; position t predicts token t+1,
+    // so the last position needs one extra decode step on the final token (its sample is discarded).
+    var x = MLXRandom.randInt(0 ..< V, [count, 1]).asType(.int32), rows = [x], lps: [MLXArray] = []
     let cache = try teacher.newCache(parameters: nil)
-    for _ in 1 ..< T {
-        x = categorical(teacher(x, cache: cache)[0..., -1, 0...])[0..., .newAxis].asType(.int32)
+    for i in 0 ..< T {
+        let logits = teacher(x, cache: cache)[0..., -1, 0...]
+        if keep { let l = logSoftmax(logits.asType(.float32), axis: -1).asType(.bfloat16); eval(l); lps.append(l) }
+        if i == T - 1 { break }
+        x = categorical(logits)[0..., .newAxis].asType(.int32)
         eval(x); rows.append(x)
     }
     let all = concatenated(rows, axis: 1)
-    return (0 ..< count).map { all[$0].asArray(Int32.self) }
+    return ((0 ..< count).map { all[$0].asArray(Int32.self) }, keep ? stacked(lps, axis: 1) : nil)
 }
 @MainActor func teacherLogProbs(_ tokens: MLXArray) -> MLXArray {
     let t = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(t); return t
 }
 MLXRandom.seed(424242)  // held-out set is independent of --seed
-let evalRaw = try generate(evalCount)
+let evalRaw = try generate(evalCount).tokens
 let evalSet = evalRaw.map { MLXArray($0) }
 let evalTargets = evalSet.map(teacherLogProbs)
 print("eval set checksum: \(evalRaw.flatMap { $0 }.reduce(0) { ($0 &* 31 &+ Int($1)) & 0xFFFF_FFFF }) (\(evalCount) sequences)")
 MLXRandom.seed(UInt64(seed))
-var pool: [[Int32]] = []
+var pool: [([Int32], MLXArray)] = []
+let poolSize = Int(option("pool") ?? "128")!  // 256 overflows MLX 32-bit indexing of the [pool, T, V] stack
 
 var params = initParams(ternary: ternary)
 eval(params)
@@ -199,11 +205,10 @@ let warmup = max(1, updates / 20)
 var tokensSeen = 0, nextRound = roundTokens, recent = 0.0, recentCount = 0, flipsRecent: Float = 0, generation = 0.0, working = 0.0
 report(evaluate(), tokens: 0)
 for step in 1 ... updates {
-    if pool.isEmpty { let t0 = Date(); pool = try generate(256); generation += Date().timeIntervalSince(t0) }
-    let tokens = MLXArray(pool.removeLast())
+    if pool.isEmpty { let t0 = Date(); let g = try generate(poolSize, keep: true); pool = (0 ..< poolSize).map { (g.tokens[$0], g.targets![$0]) }; generation += Date().timeIntervalSince(t0) }
+    let (poolTokens, poolTarget) = pool.removeLast(); let tokens = MLXArray(poolTokens), target = poolTarget.asType(.float32)
     tokensSeen += T
     let t0 = Date()
-    let target = teacherLogProbs(tokens)
     let (loss, grads) = lossGrad(params + tritState.map(\.value) + [tokens, target])
     // ane-train schedules: rho warm-up 0.25 -> 1 then cosine to 0.2 (times rhoScale); Adam rate warm-up then cosine to 0.1.
     let cosine = 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, updates - warmup))))
