@@ -332,7 +332,7 @@ let L = Int(option("max-len") ?? "512")!
     var agree = [Float](), rel = [Float](), kl = [Float](), klBase = [Float](), argBase = [Float](), argGpuBase = [Float](), maxAbs: Float = 0, bad = 0
     for t in seqs {
         let times = try aneForward(t, poison: true)
-        for (i, x) in times.enumerated() { layerTime[i] += x / Double(nseq) }
+        _ = times
         for (li, l) in layers.enumerated() {
             let y = view(try output(l, "y")).asType(.float32)
             bad += (isNaN(y).asType(.int32) + (abs(y) .> 65000).asType(.int32)).sum().item(Int.self)
@@ -356,8 +356,6 @@ let L = Int(option("max-len") ?? "512")!
     print("KL(GPU ternary || ANE) per token:    mean \(String(format: "%.5f", mean(kl)))  per sequence: \(list(kl, "%.5f"))")
     print("context: KL(bf16 base || ANE) \(String(format: "%.4f", mean(klBase))), argmax ANE vs base \(String(format: "%.1f%%", 100 * mean(argBase))), GPU ternary vs base \(String(format: "%.1f%%", 100 * mean(argGpuBase)))")
     print("overflow: \(bad) nonfinite or |y| > 65000 in any layer output over all sequences; max |y| over all layers \(String(format: "%.1f", maxAbs)); per layer: " + layerMax.map { String(format: "%.1f", $0) }.joined(separator: " "))
-    print("per-layer ANE time (mean ms): " + layerTime.enumerated().map { String(format: "%d%@ %.2f", $0.offset, attentionLayers.contains($0.offset) ? "a" : "c", $0.element * 1000) }.joined(separator: " "))
-    print(String(format: "sum of layer ANE time %.2f ms", layerTime.reduce(0, +) * 1000))
 
     print("# prefill speed, T=\(T), \(reps) reps")
     let tokens = seqs[0]
@@ -365,11 +363,13 @@ let L = Int(option("max-len") ?? "512")!
     var e2e = 0.0, aneOnly = 0.0
     for _ in 0 ..< reps {
         let t0 = now()
-        _ = try aneForward(tokens)
+        for (i, x) in try aneForward(tokens).enumerated() { layerTime[i] += x / Double(reps) }
         let t1 = now()
         let l = head(try aneHidden(), fp32: false); eval(l)
         e2e += now() - t0; aneOnly += t1 - t0
     }
+    print("per-layer ANE time (mean ms, \(reps) reps): " + layerTime.enumerated().map { String(format: "%d%@ %.2f", $0.offset, attentionLayers.contains($0.offset) ? "a" : "c", $0.element * 1000) }.joined(separator: " ")
+          + String(format: "; sum %.2f ms", layerTime.reduce(0, +) * 1000))
     print(String(format: "ANE end to end (embed GPU + 16 layers ANE + head GPU): %.1f ms per sequence, %.0f tok/s;  embed+layers only: %.1f ms, %.0f tok/s",
                  e2e / Double(reps) * 1000, Double(T * reps) / e2e, aneOnly / Double(reps) * 1000, Double(T * reps) / aneOnly))
     setMatDtype(.bfloat16)
