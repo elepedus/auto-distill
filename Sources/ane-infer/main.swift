@@ -120,9 +120,10 @@ func buf(_ a: MLXArray, _ shape: [Int]) -> SharedBuffer { let b = SharedBuffer(s
 }
 @MainActor func linearsHaveCol(_ i: Int) -> Bool { linearPaths.filter { $0.hasPrefix("model.layers.\(i).") }.contains { tern[$0]!.col != nil } }
 
-@MainActor func compileLayer(_ i: Int, x: ExternalInputBinding) throws -> Model {
+/// Weight, scale, norm-gain and colscale bindings of layer i, shared by its prefill and decode programs.
+@MainActor func weightBindings(_ i: Int) throws -> [String: ExternalInputBinding] {
     let attention = attentionLayers.contains(i), pre = "model.layers.\(i)."
-    var bindings: [String: ExternalInputBinding] = ["x": x]
+    var bindings: [String: ExternalInputBinding] = [:]
     var colParts: [String: MLXArray] = [:]
     func add(_ name: String, _ path: String, rows: Range<Int>? = nil, gqa: Bool = false) throws {
         let t = tern[pre + path]!
@@ -147,11 +148,17 @@ func buf(_ a: MLXArray, _ shape: [Int]) -> SharedBuffer { let b = SharedBuffer(s
     try add("w1", "feed_forward.w1"); try add("w3", "feed_forward.w3"); try add("w2", "feed_forward.w2")
     bindings["g_op"] = try buf(floats[pre + "operator_norm.weight"]!, [1, 1, 1, D]).binding()
     bindings["g_ffn"] = try buf(floats[pre + "ffn_norm.weight"]!, [1, 1, 1, D]).binding()
-    let useCol = linearsHaveCol(i)
-    if useCol {
+    if linearsHaveCol(i) {
         let packed = concatenated(colscaleNames(attention: attention, dim: D, ff: FF).map { colParts[$0.name]! }, axis: 0)
         bindings["cs"] = try buf(packed, [1, 1, 1, packed.dim(0)]).binding()
     }
+    return bindings
+}
+nonisolated(unsafe) var weights: [[String: ExternalInputBinding]] = []
+
+@MainActor func compileLayer(_ i: Int, x: ExternalInputBinding) throws -> Model {
+    let attention = attentionLayers.contains(i), useCol = linearsHaveCol(i)
+    let bindings = weights[i].merging(["x": x]) { $1 }
     let (program, constants) = try layerProgram(shape, attention: attention, diagnostics: false, colscale: useCol)
     let model = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 4 << 30), inputBindings: bindings)
     _ = try model.prepareUpdating(inputs: constants)
@@ -159,6 +166,7 @@ func buf(_ a: MLXArray, _ shape: [Int]) -> SharedBuffer { let b = SharedBuffer(s
 }
 
 let compileStart = now()
+weights = try (0 ..< 16).map(weightBindings)
 var layers: [Model] = []
 for i in 0 ..< 16 { layers.append(try compileLayer(i, x: i == 0 ? try embedBuffer.binding() : try link(layers[i - 1], "y"))) }
 print(String(format: "compiled 16 ANE programs in %.1fs", now() - compileStart))
@@ -191,18 +199,145 @@ let seqs = (0 ..< nseq).map { s -> MLXArray in MLXArray([Int32(tokenizer.bosToke
     return Double(T * reps) / (now() - t0)
 }
 
+// ---- Decode: one token per step, 16 single-token programs chained zero-copy; conv state and the K/V caches are updated by the host.
+let L = Int(option("max-len") ?? "512")!
+@MainActor final class Decoder {
+    let xBuf = SharedBuffer([1, 1, 1, D]), onehot = SharedBuffer([1, 1, 1, L]), mask = SharedBuffer([1, 1, 1, L])
+    let cosBuf = SharedBuffer([1, 1, 1, HD]), sinBuf = SharedBuffer([1, 1, 1, HD])
+    var models: [Model] = [], kc: [SharedBuffer?] = [], vc: [SharedBuffer?] = [], s0: [SharedBuffer?] = [], s1: [SharedBuffer?] = []
+    var out: [[String: SurfaceBinding]] = []
+    var pos = 0
+    let embed16: [Float16] = embed.asType(.float16).asArray(Float16.self)  // CPU copy: the embedding lookup is a 2 KB memcpy
+    init() throws {
+        for i in 0 ..< 16 {
+            let attention = attentionLayers.contains(i)
+            var b = weights[i]
+            b["x"] = i == 0 ? try xBuf.binding() : try link(models[i - 1], "y")
+            if attention {
+                let k = SharedBuffer([1, HEADS, L, HD]), v = SharedBuffer([1, HEADS, L, HD])
+                kc.append(k); vc.append(v); s0.append(nil); s1.append(nil)
+                b["kc"] = try k.binding(); b["vc"] = try v.binding(); b["onehot"] = try onehot.binding(); b["mask"] = try mask.binding()
+                b["cos"] = try cosBuf.binding(); b["sin"] = try sinBuf.binding()
+            } else {
+                let a = SharedBuffer([1, 1, 1, D]), c = SharedBuffer([1, 1, 1, D])
+                kc.append(nil); vc.append(nil); s0.append(a); s1.append(c)
+                b["s0"] = try a.binding(); b["s1"] = try c.binding()
+            }
+            let (program, constants) = try decodeProgram(shape, attention: attention, maxLength: L, colscale: linearsHaveCol(i))
+            let m = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 4 << 30), inputBindings: b)
+            _ = try m.prepareUpdating(inputs: constants)
+            models.append(m)
+            let names = attention ? ["y", "k_new", "v_new"] : ["y", "ns0", "ns1"]
+            out.append(Dictionary(uniqueKeysWithValues: try names.map { ($0, try output(m, $0)) }))
+        }
+        reset()
+    }
+    func reset() {
+        pos = 0
+        for b in kc + vc + s0 + s1 { if let b { memset(b.pointer, 0, b.bytes) } }
+        memset(onehot.pointer, 0, onehot.bytes)
+        let m = mask.pointer.assumingMemoryBound(to: Float16.self)
+        for j in 0 ..< L { m[j] = -30000 }
+    }
+    /// Copies `rows` rows of a program output (one per plane, `rowBytes` each) to dst + r * stride.
+    func copy(_ b: SurfaceBinding, rows: Int, rowBytes: Int, to dst: UnsafeMutableRawPointer, stride: Int) {
+        let base = IOSurfaceGetBaseAddress(b.surface) + b.startOffset
+        for r in 0 ..< rows { memcpy(dst + r * stride, base + r * b.layout.planeStride, rowBytes) }
+    }
+    /// Runs one token; returns the summed ANE time of the layers. The hidden state is in `hidden()`.
+    func step(_ token: Int) throws -> Double {
+        precondition(pos < L)
+        embed16.withUnsafeBytes { _ = memcpy(xBuf.pointer, $0.baseAddress! + token * D * 2, D * 2) }
+        let oh = onehot.pointer.assumingMemoryBound(to: Float16.self), m = mask.pointer.assumingMemoryBound(to: Float16.self)
+        if pos > 0 { oh[pos - 1] = 0 }
+        oh[pos] = 1; m[pos] = 0
+        let c = cosBuf.pointer.assumingMemoryBound(to: Float16.self), sn = sinBuf.pointer.assumingMemoryBound(to: Float16.self)
+        for i in 0 ..< HD {
+            let angle = Double(pos) * pow(Double(shape.ropeBase), -Double(2 * (i % (HD / 2))) / Double(HD))
+            c[i] = Float16(cos(angle)); sn[i] = Float16(sin(angle))
+        }
+        var total = 0.0
+        for i in 0 ..< 16 {
+            total += try models[i].evaluatePrepared(readOutputs: false, poisonOutputs: false).elapsed
+            if let k = kc[i], let v = vc[i] {
+                copy(out[i]["k_new"]!, rows: HEADS, rowBytes: HD * 2, to: k.pointer + pos * HD * 2, stride: L * HD * 2)
+                copy(out[i]["v_new"]!, rows: HEADS, rowBytes: HD * 2, to: v.pointer + pos * HD * 2, stride: L * HD * 2)
+            } else {
+                copy(out[i]["ns0"]!, rows: 1, rowBytes: D * 2, to: s0[i]!.pointer, stride: 0)
+                copy(out[i]["ns1"]!, rows: 1, rowBytes: D * 2, to: s1[i]!.pointer, stride: 0)
+            }
+        }
+        pos += 1
+        return total
+    }
+    func hidden() -> MLXArray { view(out[15]["y"]!).asType(.float32).reshaped(1, D) }
+}
+
+@MainActor func runDecode() throws {
+    print("# decode (single-token programs, max length \(L))")
+    let t0 = now()
+    let dec = try Decoder()
+    print(String(format: "compiled 16 decode programs in %.1fs", now() - t0))
+    // Parity: teacher-forced, the decoder's logits at each position against the GPU ternary model's prefill logits.
+    setMatDtype(.float32)
+    let n = Int(option("decode-parity") ?? "128")!
+    let seq = seqs[0], ref = gpuLogits(gpuTern, seq)
+    var rows: [MLXArray] = []
+    for t in 0 ..< n { _ = try dec.step(Int(seq[t].item(Int32.self))); let r = head(dec.hidden(), fp32: true)[0]; eval(r); rows.append(r) }
+    let got = stacked(rows, axis: 0), want = ref[0 ..< n]
+    eval(got)
+    let rels = (0 ..< n).map { relL2(got[$0], want[$0]) }
+    let agree = (got.argMax(axis: -1) .== want.argMax(axis: -1)).asType(.int32).sum().item(Int.self)
+    let lpA = logSoftmax(got, axis: -1), lpG = logSoftmax(want, axis: -1)
+    print(String(format: "decode vs GPU ternary, %d teacher-forced positions: logits rel-L2 %.4f (all together), worst per position %.4f; argmax agreement %.2f%%; KL(GPU || ANE) %.5f",
+                 n, relL2(got, want), rels.max()!, 100 * Double(agree) / Double(n), (exp(lpG) * (lpG - lpA)).sum(axis: -1).mean().item(Float.self)))
+    // Speed: greedy generation from BOS, `steps` tokens, head and argmax on the GPU.
+    let steps = Int(option("decode-steps") ?? "128")!
+    func aneSpeed() throws -> (Double, Double) {
+        dec.reset()
+        var tok = Int(tokenizer.bosTokenId ?? 1), aneTime = 0.0
+        let t0 = now()
+        for _ in 0 ..< steps {
+            aneTime += try dec.step(tok)
+            let a = head(dec.hidden(), fp32: false).argMax(axis: -1); eval(a)
+            tok = a.item(Int.self)
+        }
+        return (Double(steps) / (now() - t0), Double(steps) / aneTime)
+    }
+    func gpuSpeed(_ m: any LLMModel) throws -> Double {
+        let bos = Int32(tokenizer.bosTokenId ?? 1)
+        func go(_ n: Int) throws {
+            let cache = try m.newCache(parameters: nil)
+            var x = MLXArray([bos])[.newAxis]
+            for _ in 0 ..< n { x = m(x, cache: cache)[0..., -1, 0...].argMax(axis: -1)[.newAxis].asType(.int32); eval(x) }
+        }
+        try go(4)
+        let t0 = now()
+        try go(steps)
+        return Double(steps) / (now() - t0)
+    }
+    setMatDtype(.bfloat16)
+    for pass in 1 ... 2 {
+        let (e2e, aneOnly) = try aneSpeed()
+        print(String(format: "pass %d: ANE decode %.1f tok/s end to end (%.1f ms/token; layers only %.1f tok/s); GPU bf16 base %.1f tok/s; GPU ternary (bf16 matmuls) %.1f tok/s",
+                     pass, e2e, 1000 / e2e, aneOnly, try gpuSpeed(base), try gpuSpeed(gpuTern)))
+    }
+}
+
 @MainActor func run() throws {
     print("# parity (ANE vs the same ternary model in MLX on the GPU, fp32 matmuls), \(nseq) sequences of \(T) tokens")
     setMatDtype(.float32)
     var layerTime = [Double](repeating: 0, count: 16)
+    var layerMax = [Float](repeating: 0, count: 16)
     var agree = [Float](), rel = [Float](), kl = [Float](), klBase = [Float](), argBase = [Float](), argGpuBase = [Float](), maxAbs: Float = 0, bad = 0
     for t in seqs {
         let times = try aneForward(t, poison: true)
         for (i, x) in times.enumerated() { layerTime[i] += x / Double(nseq) }
-        for l in layers {
+        for (li, l) in layers.enumerated() {
             let y = view(try output(l, "y")).asType(.float32)
             bad += (isNaN(y).asType(.int32) + (abs(y) .> 65000).asType(.int32)).sum().item(Int.self)
-            maxAbs = max(maxAbs, MLX.where(isNaN(y), 0, abs(y)).max().item(Float.self))
+            let m = MLX.where(isNaN(y), 0, abs(y)).max().item(Float.self)
+            maxAbs = max(maxAbs, m); layerMax[li] = max(layerMax[li], m)
         }
         let a = head(try aneHidden(), fp32: true), g = gpuLogits(gpuTern, t), b = gpuLogits(base, t)
         eval(a)
@@ -220,7 +355,7 @@ let seqs = (0 ..< nseq).map { s -> MLXArray in MLXArray([Int32(tokenizer.bosToke
     print("argmax agreement ANE vs GPU ternary: mean \(String(format: "%.2f%%", 100 * mean(agree)))  per sequence: \(list(agree.map { 100 * $0 }, "%.2f"))")
     print("KL(GPU ternary || ANE) per token:    mean \(String(format: "%.5f", mean(kl)))  per sequence: \(list(kl, "%.5f"))")
     print("context: KL(bf16 base || ANE) \(String(format: "%.4f", mean(klBase))), argmax ANE vs base \(String(format: "%.1f%%", 100 * mean(argBase))), GPU ternary vs base \(String(format: "%.1f%%", 100 * mean(argGpuBase)))")
-    print("overflow: \(bad) nonfinite or |y| > 65000 in any layer output over all sequences; max |y| over all layers \(String(format: "%.1f", maxAbs))")
+    print("overflow: \(bad) nonfinite or |y| > 65000 in any layer output over all sequences; max |y| over all layers \(String(format: "%.1f", maxAbs)); per layer: " + layerMax.map { String(format: "%.1f", $0) }.joined(separator: " "))
     print("per-layer ANE time (mean ms): " + layerTime.enumerated().map { String(format: "%d%@ %.2f", $0.offset, attentionLayers.contains($0.offset) ? "a" : "c", $0.element * 1000) }.joined(separator: " "))
     print(String(format: "sum of layer ANE time %.2f ms", layerTime.reduce(0, +) * 1000))
 
@@ -244,3 +379,4 @@ let seqs = (0 ..< nseq).map { s -> MLXArray in MLXArray([Int32(tokenizer.bosToke
     print(String(format: "GPU bf16 base: %.0f tok/s, GPU ternary: %.0f tok/s", gpuRate(base), gpuRate(gpuTern)))
 }
 try run()
+if !CommandLine.arguments.contains("--no-decode") { try runDecode() }
