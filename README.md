@@ -122,7 +122,7 @@ queue can be restarted. Blank and `#` lines are ignored. Build first: `swift bui
 ```sh
 swift run -c release ane-train [--population 8] [--tokens 2048000] [--round 256000] [--accum 1] [--frozen-trits] \
   [--seed 0] [--hyper LR,THETA,TAU,RHO] [--loss-scale 1024] [--fixed-scale] [--eval 8] [--jsonl PATH] \
-  [--grad-prescale] [--bound] [--bound-alpha 0.1]
+  [--grad-prescale] [--no-bound] [--bound-alpha 0.1]
 ```
 
 - `--seed N`: initialisation, training data and PBT draws follow it. The eval set does not (fixed, generated under seed 424242).
@@ -134,7 +134,7 @@ swift run -c release ane-train [--population 8] [--tokens 2048000] [--round 2560
 - `--grad-prescale` (optional): per-tensor power-of-two scales inside the ANE backward, so token-sum outputs (`ds_*`, `dk*`, `dg_*`)
   and per-element ones (`gp_*`) each fit fp16. Every output is now checked for non-finite values, and an overflowing
   sequence is skipped. See [`results/grad-numerics-2026-11-23.md`](results/grad-numerics-2026-11-23.md).
-- `--bound`, `--bound-alpha A` (recommended; the stabiliser that matters, see the receipt): after each Adam step, clamp the per-row scales, gains and conv taps so the fp16 forward
+- Bound (on by default since 2026-11-24; `--no-bound` turns it off, `--bound-alpha A` sets A): after each Adam step, clamp the per-row scales, gains and conv taps so the fp16 forward
   stays below about 16k. A is the practical row-sum factor (0.1; strict worst case 1, which is infeasible). The bound is
   practical, not a proof; attention's `e @ (V·2^8)` is unbounded in the worst case. See
   [`results/forward-bounds-2026-11-24.md`](results/forward-bounds-2026-11-24.md).

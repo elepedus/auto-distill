@@ -1,5 +1,5 @@
 // Train a population of tiny ternary LFM2-shaped students from scratch, trunks on the ANE, against bf16 LFM2-350M.
-//   ane-train [--population 8] [--tokens 2048000] [--round 256000] [--accum 1] [--frozen-trits]
+//   ane-train [--population 8] [--tokens 2048000] [--round 256000] [--accum 1] [--frozen-trits] [--no-bound]
 //
 // The teacher writes the text (a from-scratch student can't yet) and scores it once for every member; each
 // member learns the teacher's full next-token distribution (KL). All members run side by side in one ANE program
@@ -34,7 +34,7 @@ var kExp = [String: [Int]](), gseen = [String: MLXArray](), dxSeen: Float = 0  /
 // --bound: after every Adam step the float parameters are clamped into a box that keeps the fp16 forward below ~16k
 // (derivation in results/forward-bounds-2026-11-24.md). R = alpha*D is the practical bound on |sum_j trit_j a_j| / max|a|
 // (strict worst case: alpha = 1); gain cap g, tap caps kc, budget B for each residual increment (r, m).
-let bound = CommandLine.arguments.contains("--bound")
+let bound = !CommandLine.arguments.contains("--no-bound")  // on by default: without it 3 of 4 P=1 runs diverged
 let alpha = Float(option("bound-alpha") ?? "0.1")!, gCap: Float = 1.5, tapCap: [Float] = [0.5, 0.5, 1.5], budget: Float = 2048
 let rowSum = alpha * Float(D), sOut: Float = 0.12  // sOut: cap of the scale of o (mixer output); chosen so sIn is not starved
 let yCap = cbrt(budget / (rowSum * tapCap.reduce(0, +) * sOut))  // conv mixer: r <= sOut*R*K*Y^3 <= budget, Y = sIn*R*g

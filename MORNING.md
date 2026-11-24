@@ -70,7 +70,7 @@ throughput measurements. A clean throughput measurement ran at the end (What's n
 
 ## What's next (suggested)
 
-1. **Make `--bound` the default.** Replace the alpha estimate with a derivation that holds, or with per-layer
+1. **Make `--bound` the default.** Done on 2026-11-24 (`--no-bound` to disable). Still to do: replace the alpha estimate with a derivation that holds, or with per-layer
    activation monitoring that tightens the caps. Bound attention's numerator.
 2. **Capacity.** At 8.2M tokens float wins by about 0.2 nats. Try a wider ternary student (d 384 or 512) on the
    ANE. The population programs already handle width.
