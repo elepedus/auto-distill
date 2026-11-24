@@ -1,6 +1,6 @@
 // Whole ternarised LFM2-350M inference: embedding (GPU) -> 16 decoder layers (ANE, chained zero-copy) -> final norm + tied head (GPU).
 //   ane-infer [--ckpt DIR] [--text FILE] [--seqs 4] [--reps 20]     parity vs the same ternary model in MLX + prefill benchmark
-//   ane-infer write-ckpt DIR [--colscale]                           write a TWN checkpoint of the base model (--colscale: random input-channel scales, for testing)
+//   ane-infer write-ckpt DIR [--colscale [--tied]]                           write a TWN checkpoint of the base model (--colscale: random input-channel scales, for testing)
 // Weights: base LFM2-350M ternarised with TWN, or --ckpt DIR (config.json + model.safetensors with <path>.trits int8 [N,K],
 // <path>.scale fp32 [N], optional <path>.colscale fp32 [K]; every other parameter under its mlx-swift-lm name).
 import ANE
@@ -69,10 +69,18 @@ if CommandLine.arguments.dropFirst().first == "write-ckpt" {
         arrays[path + ".trits"] = t.asType(.int8); arrays[path + ".scale"] = s
         if colscale { arrays[path + ".colscale"] = 0.5 + MLXRandom.uniform(low: 0, high: 1, [t.dim(1)]) }
     }
+    if CommandLine.arguments.contains("--tied") {  // colscales foldable into norms: q=k=v, w1=w3, out_proj equal across the two query heads of a kv head
+        for path in linearPaths {
+            let pre = String(path[..<path.range(of: ".", options: .backwards)!.lowerBound]), name = path.split(separator: ".").last!
+            if name == "k_proj" || name == "v_proj" { arrays[path + ".colscale"] = arrays[pre + ".q_proj.colscale"]! }
+            if name == "w3" { arrays[path + ".colscale"] = arrays[pre + ".w1.colscale"]! }
+            if name == "out_proj" && pre.hasSuffix("self_attn") { arrays[path + ".colscale"] = repeated(arrays[path + ".colscale"]!.reshaped(8, 2, 64)[0..., 0 ..< 1], count: 2, axis: 1).reshaped(-1) }
+        }
+    }
     for (k, v) in p where !linearWeightKeys.contains(k) { arrays[k] = v }
     try save(arrays: arrays, url: out.appending(path: "model.safetensors"))
     try? FileManager.default.removeItem(at: out.appending(path: "config.json"))
-    try FileManager.default.copyItem(at: baseDir.appending(path: "config.json"), to: out.appending(path: "config.json"))
+    try Data(contentsOf: baseDir.appending(path: "config.json")).write(to: out.appending(path: "config.json"))  // contents: the snapshot file is a relative symlink
     print("wrote \(arrays.count) tensors to \(out.path)")
     exit(0)
 }
