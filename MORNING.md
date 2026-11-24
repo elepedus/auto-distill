@@ -11,7 +11,7 @@ receipt is [results/ane-vs-gpu-2026-11-24.md](results/ane-vs-gpu-2026-11-24.md).
   | budget | ANE, `--bound` | ANE, `--bound --grad-prescale` | GPU ternary TTF, fp32 |
   |---|---|---|---|
   | 2.05M tokens, 3 seeds | 2.218 ± 0.05 | 2.245 ± 0.04 | 2.286 ± 0.13 |
-  | 8.2M tokens | | 1.794 (seed 1: pending) | 1.832 / 1.811 |
+  | 8.2M tokens | | 1.794 / 1.716 | 1.832 / 1.811 |
 
   Held-out KL against LFM2-350M, on a fixed eval set.
 - **Yesterday's ANE numbers were wrong.** P=1 at 7.4–9.9 and PBT at 2.5–2.7 came from a bug, not from the

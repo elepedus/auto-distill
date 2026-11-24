@@ -207,3 +207,16 @@ About 1.5 hours is deliberately unallocated.
     and θ 12–19, lr 1.5–2.8e-3. The gain over P=1 defaults is only ~0.05–0.1 at this budget.
   - **GPU ternary long, seed 1:** 1.811 (seed 0: 1.832).
   - Remaining: GPU fp32 long seed 1 (~05:30) and ANE long seed 1, bound+prescale (~06:30).
+- 2026-11-24 05:45. **Long-run seed 1 done.**
+
+  | run | seed 0 | seed 1 | mean |
+  |---|---|---|---|
+  | ANE ternary, bound+prescale | 1.794 | 1.716 | 1.755 |
+  | GPU ternary TTF, fp32 | 1.832 | 1.811 | 1.822 |
+  | GPU float fp32 | 1.607 | 1.555 | 1.581 |
+
+  - ANE and GPU ternary tie within seed spread. Float leads ternary by ~0.17–0.24.
+  - ANE long seed 1 mostly ran alone. Per sequence: teacher scoring 27.8 ms, Adam/TTF update 12.4, head 8.6,
+    accumulate 8.1, ANE backward 6.7, ANE forward 3.6, plus teacher generation 33.8. That is 3807 tok/s
+    excluding generation, and the ANE trunk is ~15% of the non-generation time.
+  - A short clean-throughput queue is running (one job at a time).
