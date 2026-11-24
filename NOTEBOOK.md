@@ -362,3 +362,23 @@ About 1.5 hours is deliberately unallocated.
     - port int8 accumulators to ane-train;
     - try 4-bit state;
     - pack trits off-ANE and expand per layer.
+- 2026-11-24 20:00. **Ternarising LFM2-350M** (`ternarise`, `results/ternarise-2026-11-24.md`). Self-distillation
+  against the bf16 base, 2.05M tokens, seed 0.
+  - **Starting points:** absmean KL 8.73 (perplexity 1.1e9); TWN KL 6.55 (perplexity 32k); TWN with layers 0 and 15
+    kept in fp, KL 5.58 (perplexity 17k). Base perplexity is 32.37.
+  - **Held-out KL at 0 / 256k / 1.02M / 2.05M tokens, wikitext perplexity at the end:**
+
+    | run | held-out KL | final perplexity |
+    |---|---|---|
+    | TTF, accumulator from zero | 6.55 / 2.41 / 1.34 / 1.274 | 515 |
+    | TTF, accumulator from the rounding residual | 6.55 / 2.04 / 1.30 / **1.248** | **456** |
+    | STE reference (absmean init, untuned) | 8.71 / 2.45 / 1.64 / 1.440 | 983 |
+
+    TTF used θ 32, τ 1000, ρ× 0.5, Adam 1e-5 on the floats.
+  - **More than half the KL gap closes within 256k tokens, then the curve flattens as the schedule cools.** Flips
+    stop after ~1.2M tokens. Not recovered: perplexity 456 vs 32. The 3-bit repair reached KL 0.80 in 600k tokens.
+  - **TTF is at least as good as the master-weight reference** at half the state, but that comparison is weak.
+  - **The residual accumulator init is an early-speed win** (2.04 vs 2.41 at 256k) and only ~0.03 at the end.
+  - **Throughput:** TTF 1075 tok/s on the GPU at 350M. Peak memory 23.5 GB, mostly the 256-sequence target pool.
+  - **Wikitext text** for perplexity is at /tmp/wikitext2-test-join.txt. The "\n\n"-joined variant gives teacher
+    perplexity 33.13; the join variant matches the known 32.37.
