@@ -349,3 +349,16 @@ About 1.5 hours is deliberately unallocated.
   - **Conclusion:** no on-policy variant clearly wins at this scale. We need a diversity-aware sample-quality
     metric before judging; teacher NLL alone is gamed by repetition. Park on-policy; keep it as a tool for later
     (exposure bias does get halved).
+- 2026-11-24 18:30. **Lean TTF** (`results/lean-ttf-2026-11-24.md`; `--acc fp32|fp16|int8|stateless` in float-train
+  --ternary; new `ttfLeanKernel`).
+  - **2.05M tokens, seeds 0/1:** fp32 2.218 / 2.443; fp16 2.189 / 2.435; int8 (stochastic rounding) 2.169 / 2.467;
+    stateless 5.456 / 5.682.
+  - **8.2M tokens, seed 0:** fp32 1.857; int8 1.847.
+  - **The accumulator drops from 4 B to 1 B per parameter at no measurable cost.** Zero state fails: about 15× more
+    flips per step, because nothing averages out the gradient noise.
+  - **Implication:** TTF training state = packed trits (~0.25 B) + int8 accumulator (1 B) ≈ 1.25 B/param, against
+    ~0.25 B/param for inference weights. A constant 1 B/param overhead, not a multiple.
+  - **Next:**
+    - port int8 accumulators to ane-train;
+    - try 4-bit state;
+    - pack trits off-ANE and expand per layer.
