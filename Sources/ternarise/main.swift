@@ -228,7 +228,8 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     var pool: [([Int32], Int, Int)] = [], steps: [MLXArray] = []
     var tokensSeen = resumeTokens, nextRound = (resumeTokens / roundTokens + 1) * roundTokens, nextPpl = (resumeTokens / pplEvery + 1) * pplEvery, recent = 0.0, recentAlpha = 0.0, recentCount = 0
     var flipsRecent: Float = 0, flipsTotal: Float = 0, generation = 0.0, working = 0.0
-    let started = Date()
+    let started = Date(), profile = CommandLine.arguments.contains("--profile")
+    var tFwd = 0.0, tUpd = 0.0  // --profile: forward+backward vs TTF+Adam+student refresh (evaluated separately)
     func report(_ tokens: Int, withPpl: Bool) {
         let h = heldOut(), ppl = withPpl ? perplexity(student) : Float.nan
         let p = withPpl ? ",\"ppl\":\(num(ppl))" : ""
@@ -247,6 +248,8 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         tokensSeen += T
         let t0 = Date()
         let (loss, grads) = lossGrad(student, [tokens, target])
+        if profile { eval(loss, grads.flattened().map { $0.1 }); tFwd += Date().timeIntervalSince(t0) }
+        let t1 = Date()
         let decayStart = max(warmup, Int(Float(updates) * (1 - decayFrac)))
         let cosine = wsd ? 1 - max(0, min(1, Float(step - decayStart) / Float(max(1, updates - decayStart)))) : 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, updates - warmup))))
         let rhoNow = (step < warmup ? 0.25 + 0.75 * Float(step) / Float(warmup) : 0.2 + 0.8 * cosine) * rhoScale
@@ -263,6 +266,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         }
         toEval.append(moved)
         eval(toEval)
+        if profile { tUpd += Date().timeIntervalSince(t1) }
         student.update(parameters: ModuleParameters.unflattened(fresh))
         for (path, mod) in replaced { if let l = mod as? TernaryLinear { l.update(parameters: ModuleParameters.unflattened([("weight", tritState[path + ".weight"]!.value)])) } }
         working += Date().timeIntervalSince(t0)
@@ -282,6 +286,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
             report(tokensSeen, withPpl: withPpl)
         }
     }
+    if profile { let n = Double(tokensSeen / T); print(String(format: "profile per update (s): generation %.3f  forward+backward %.3f  TTF+Adam %.3f  total working %.3f", generation / n, tFwd / n, tUpd / n, working / n)) }
     print(String(format: "pool generation %.1f ms per sequence; throughput excluding generation %.0f tok/s, including %.0f tok/s; peak memory %.1f GB",
                  1000 * generation / Double(tokensSeen / T), Double(tokensSeen) / working, Double(tokensSeen) / Date().timeIntervalSince(started), Double(Memory.peakMemory) / 1e9))
     emit("{\"type\":\"done\",\"tokens\":\(tokensSeen),\"seconds\":\(Date().timeIntervalSince(started)),\"state_bytes_per_ternary_param\":\(perTernary),\"peak_gb\":\(Double(Memory.peakMemory) / 1e9)}")
