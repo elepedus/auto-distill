@@ -213,24 +213,30 @@ print(String(format: "population %d: compiled %d ANE programs in %.1fs; %d terna
 
 // Teacher: writes the training text (random first token, temperature 1) and gives the targets.
 let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
-@MainActor func generate(_ count: Int) throws -> [[Int32]] {
-    var x = MLXRandom.randInt(0 ..< V, [count, 1]).asType(.int32), rows = [x]
+@MainActor func generate(_ count: Int, keep: Bool = false) throws -> (tokens: [[Int32]], targets: MLXArray?) {
+    // keep: also store the decode-step teacher log-probs [count, T, V] (bf16) as KL targets; position t predicts token t+1,
+    // so the last position needs one extra decode step on the final token (its sample is discarded).
+    var x = MLXRandom.randInt(0 ..< V, [count, 1]).asType(.int32), rows = [x], lps: [MLXArray] = []
     let cache = try teacher.newCache(parameters: nil)
-    for _ in 1 ..< T {
-        x = categorical(teacher(x, cache: cache)[0..., -1, 0...])[0..., .newAxis].asType(.int32)
+    for i in 0 ..< T {
+        let logits = teacher(x, cache: cache)[0..., -1, 0...]
+        if keep { let l = logSoftmax(logits.asType(.float32), axis: -1).asType(.bfloat16); eval(l); lps.append(l) }
+        if i == T - 1 { break }
+        x = categorical(logits)[0..., .newAxis].asType(.int32)
         eval(x); rows.append(x)
     }
     let all = concatenated(rows, axis: 1)
-    return (0 ..< count).map { all[$0].asArray(Int32.self) }
+    return ((0 ..< count).map { all[$0].asArray(Int32.self) }, keep ? stacked(lps, axis: 1) : nil)
 }
 @MainActor func teacherLogProbs(_ tokens: MLXArray) -> MLXArray {
     let t = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(t); return t
 }
 MLXRandom.seed(424242)  // the held-out set is the same for every --seed
-let evalSet = try generate(evalCount).map { MLXArray($0) }  // held out: never trained on
+let evalSet = try generate(evalCount).tokens.map { MLXArray($0) }  // held out: never trained on
 let evalTargets = evalSet.map(teacherLogProbs)
 MLXRandom.seed(UInt64(seed))  // training data from here on
-var pool: [[Int32]] = []
+var pool: [([Int32], MLXArray)] = []
+let poolSize = Int(option("pool") ?? "128")!  // 256 overflows MLX 32-bit indexing of the [pool, T, V] stack
 
 // Head and loss on the GPU for all members: logits = rmsnorm(h)·Eᵀ (tied), KL(teacher || member) per token.
 func klPerMember(_ h: MLXArray, _ e: MLXArray, _ gain: MLXArray, _ target: MLXArray) -> MLXArray {
@@ -370,10 +376,9 @@ for step in 1 ... updates {
 
     var sums = [ObjectIdentifier: MLXArray](), used = 0
     for _ in 0 ..< accum {
-        if pool.isEmpty { let t0 = Date(); pool = try generate(256); generation += Date().timeIntervalSince(t0) }
-        let tokens = MLXArray(pool.removeLast())
+        if pool.isEmpty { let t0 = Date(); let g = try generate(poolSize, keep: true); pool = (0 ..< poolSize).map { (g.tokens[$0], g.targets![$0]) }; generation += Date().timeIntervalSince(t0) }
+        let (poolTokens, poolTarget) = pool.removeLast(); let tokens = MLXArray(poolTokens), target = poolTarget.asType(.float32)
         tokensSeen += T
-        let target = timed("teacher") { teacherLogProbs(tokens) }
         let h = try timed("forward") { try forward(tokens) }
         let alive = finite([h])
         if alive.contains(false) { replaceDiverged(alive); continue }  // ponytail: with --accum > 1 the slot keeps this update's earlier sums
