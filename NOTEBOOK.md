@@ -185,3 +185,15 @@ About 1.5 hours is deliberately unallocated.
   - **GPU tern-def-long (8.2M tokens, cosine over the whole run):** 3.05 at 1M, 2.82 at 2M, 2.33 at 3M, 2.16 at
     4M, 2.06 at 5M, 1.92 at 6M, 1.84 at 7M, **1.832** at 8.2M. The ANE long run (bound+prescale, 8.2M) has
     started.
+- 2026-11-24 03:25. **Long runs** (8.2M tokens, seed 0, cosine over the whole run, eval every 1.024M):
+
+  | run | 1M | 2M | 3M | 4M | 5M | 6M | 7M | 8.2M |
+  |---|---|---|---|---|---|---|---|---|
+  | ANE ternary, bound+prescale | 3.55 | 2.37 | 2.20 | 2.17 | 2.05 | 1.98 | 1.79 | **1.794** (225 overflow events, no divergence) |
+  | GPU ternary TTF, fp32 | 3.05 | 2.82 | 2.33 | 2.16 | 2.06 | 1.92 | 1.84 | 1.832 |
+  | GPU float fp32, schedule | 3.06 | 2.45 | 2.18 | 2.03 | 1.88 | 1.70 | 1.66 | 1.607 |
+
+  - The ANE still matches GPU ternary at 4× the tokens.
+  - Float now leads ternary by ~0.2 nats. That's the first sign of ternary capacity mattering, at d 256 with 3.4M
+    trits.
+  - Running: seed-1 replicates of both GPU long runs; ANE bound-only seeds and PBT-8 with bound+prescale.
