@@ -1,0 +1,11 @@
+{"type":"recon","layer_type":"conv.in_proj","twn":0.449611,"twn_ls":0.449611,"two_sided":0.4485715}
+{"type":"recon","layer_type":"conv.out_proj","twn":0.45580792,"twn_ls":0.45580792,"two_sided":0.4528922}
+{"type":"recon","layer_type":"feed_forward.w1","twn":0.44716495,"twn_ls":0.44716495,"two_sided":0.44653535}
+{"type":"recon","layer_type":"feed_forward.w2","twn":0.44851267,"twn_ls":0.44851267,"two_sided":0.4465817}
+{"type":"recon","layer_type":"feed_forward.w3","twn":0.4476744,"twn_ls":0.4476744,"two_sided":0.44748533}
+{"type":"recon","layer_type":"self_attn.k_proj","twn":0.4674094,"twn_ls":0.4674094,"two_sided":0.4631595}
+{"type":"recon","layer_type":"self_attn.out_proj","twn":0.46481127,"twn_ls":0.46481127,"two_sided":0.45265672}
+{"type":"recon","layer_type":"self_attn.q_proj","twn":0.4606807,"twn_ls":0.4606807,"two_sided":0.4565783}
+{"type":"recon","layer_type":"self_attn.v_proj","twn":0.4817988,"twn_ls":0.4817988,"two_sided":0.4669071}
+{"type":"recon","layer_type":"all","twn":0.44956544,"twn_ls":0.44956544,"two_sided":0.44804302}
+{"type":"measure","init":"twn","colscale":true,"keep_fp":"","kl":6.0856857,"alpha":0.0843887,"ppl":40183.84,"teacher_ppl":32.36911,"zero_fraction":0.42867715167303155}
