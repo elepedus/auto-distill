@@ -2,7 +2,7 @@
 //   ternarise measure [--init absmean|twn] [--keep-fp 0,15|all] [--text FILE] [--eval 8] [--jsonl PATH]
 //   ternarise train   [measure options] [--ste] [--tokens 2048000] [--round 256000] [--seed 0] [--lr 1e-5]
 //                     [--hyper lr,theta,tau,rho] [--acc-init zero|residual] [--kappa 1] [--pool 256] [--ppl-every 1024000]
-//                     [--colscale] [--layerwise TOKENS]
+//                     [--colscale [--untied]] [--layerwise TOKENS]
 // --colscale: W ~ diag(r) T diag(c), c per input channel (alternating-minimisation init, Adam-trained). --layerwise: before the
 // end-to-end phase, TOKENS of per-layer reconstruction (student layer on the teacher's input -> teacher's output).
 // Every linear in every decoder layer becomes trits x per-row scale (embedding/tied head, norms, conv taps stay float).
@@ -66,17 +66,33 @@ func quantise(_ w: MLXArray, twn: Bool) -> (MLXArray, MLXArray) {
 }
 
 /// Two-sided init, W ~ diag(r) T diag(c): rounds of (T by the TWN rule on W/c, r by least squares; c by per-column least squares).
-func quantiseTwoSided(_ w: MLXArray, rounds: Int = 4) -> (MLXArray, MLXArray, MLXArray) {
-    var c = MLXArray.ones([w.dim(1)]), t = w, r = MLXArray.ones([w.dim(0)])
-    for _ in 0 ..< rounds {
+/// `fixedC`: tied scale, only T and r are fitted.
+func quantiseTwoSided(_ w: MLXArray, rounds: Int = 4, fixedC: MLXArray? = nil) -> (MLXArray, MLXArray, MLXArray) {
+    var c = fixedC ?? MLXArray.ones([w.dim(1)]), t = w, r = MLXArray.ones([w.dim(0)])
+    for _ in 0 ..< (fixedC == nil ? rounds : 1) {
         t = quantise(w / c, twn: true).0
         let tc = t * c
         r = (w * tc).sum(axis: 1) / maximum((tc * tc).sum(axis: 1), 1e-12)
+        if fixedC != nil { break }
         let u = t * r.expandedDimensions(axis: 1)
         c = (w * u).sum(axis: 0) / maximum((u * u).sum(axis: 0), 1e-12)
         c = maximum(c, 0.01 * c.mean())  // keep positive and non-degenerate
     }
     return (t, r, c)
+}
+
+/// Linears that share an input share one column scale (foldable into the preceding norm): q/k/v, and w1/w3.
+func tieGroup(_ path: String) -> (group: String, members: [String])? {
+    var p = path.split(separator: ".").map(String.init); guard let last = p.popLast() else { return nil }
+    let sets = [["q_proj", "k_proj", "v_proj"], ["w1", "w3"]]
+    guard let m = sets.first(where: { $0.contains(last) }) else { return nil }
+    return (p.joined(separator: ".") + "." + m.joined(separator: "+"), m.map { (p + [$0]).joined(separator: ".") })
+}
+/// Sum the column-scale gradients within each tie group, so identical Adam updates keep tied copies identical.
+func tieColscale(_ grads: [(String, MLXArray)]) -> [(String, MLXArray)] {
+    var sums: [String: MLXArray] = [:]
+    for (k, g) in grads where k.hasSuffix(".colscale") { if let t = tieGroup(String(k.dropLast(9))) { sums[t.group] = (sums[t.group] ?? MLXArray(Float(0))) + g } }
+    return grads.map { k, g in k.hasSuffix(".colscale") ? (k, tieGroup(String(k.dropLast(9))).flatMap { sums[$0.group] } ?? g) : (k, g) }
 }
 
 /// TTF state of one matrix, as float-train's Trits: trits in an fp16 shared buffer, fp32 accumulator, factored second moments.
@@ -113,7 +129,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     let hyp = (option("hyper") ?? "1e-5,16,1000,0.25").split(separator: ",").map { Float($0)! }
     let lr = option("lr").map { Float($0)! } ?? hyp[0], theta = hyp[1], tau = hyp[2], rhoScale = hyp[3]
     let residual = (option("acc-init") ?? "zero") == "residual", kappa = Float(option("kappa") ?? "1")!
-    let colscale = CommandLine.arguments.contains("--colscale"), lwTokens = Int(option("layerwise") ?? "0")!
+    let colscale = CommandLine.arguments.contains("--colscale"), untied = CommandLine.arguments.contains("--untied"), lwTokens = Int(option("layerwise") ?? "0")!
     let evalCount = Int(option("eval") ?? "8")!, seed = Int(option("seed") ?? "0")!
     let tokenBudget = Int(option("tokens") ?? "2048000")!, roundTokens = Int(option("round") ?? "256000")!
     let pplEvery = Int(option("ppl-every") ?? "1024000")!, poolSize = Int(option("pool") ?? "256")!
@@ -143,7 +159,8 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     }
 
     // Replace layer linears; TTF state is keyed by the flattened parameter name of the trits.
-    var recon: [String: [Float]] = [:], tritState: [String: Trits] = [:], ternaryCount = 0, keptCount = 0, zeroTrits = 0, replaced: [(String, Module)] = []
+    let leaves = Dictionary(uniqueKeysWithValues: student.leafModules().flattened().compactMap { p, m in (m as? Linear).map { (p, $0) } })
+    var tiedC: [String: MLXArray] = [:], recon: [String: [Float]] = [:], tritState: [String: Trits] = [:], ternaryCount = 0, keptCount = 0, zeroTrits = 0, replaced: [(String, Module)] = []
     for (path, m) in student.leafModules().flattened() {
         guard let lin = m as? Linear else { continue }
         let parts = path.split(separator: "."), li = parts.firstIndex(of: "layers").flatMap { Int(parts[$0 + 1]) }
@@ -156,7 +173,12 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         var c: MLXArray?
         if colscale {
             let (t0, s0) = quantise(w, twn: true), sls = (w * t0).sum(axis: 1) / maximum((t0 * t0).sum(axis: 1), 1e-12)
-            let (t2, s2, c2) = quantiseTwoSided(w)
+            var cFix: MLXArray?
+            if !untied, let g = tieGroup(path) {
+                if tiedC[g.group] == nil { tiedC[g.group] = quantiseTwoSided(concatenated(g.members.map { leaves[$0]!.weight.asType(.float32) }, axis: 0)).2; eval(tiedC[g.group]!) }
+                cFix = tiedC[g.group]
+            }
+            let (t2, s2, c2) = quantiseTwoSided(w, fixedC: cFix)
             func err(_ t: MLXArray, _ r: MLXArray, _ c: MLXArray?) -> Float { let d = w - t * r.expandedDimensions(axis: 1) * (c ?? MLXArray(Float(1))); return (d * d).sum().item(Float.self) }
             let key = parts.drop { $0 != "layers" }.dropFirst(2).joined(separator: ".")
             let e: [Float] = [err(t0, s0, nil), err(t0, sls, nil), err(t2, s2, c2), (w * w).sum().item(Float.self)]
@@ -293,7 +315,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
             let b1 = pow(0.9, Float(step)), b2 = pow(0.999, Float(step))
             let current = Dictionary(uniqueKeysWithValues: student.trainableParameters().flattened())
             var fresh: [(String, MLXArray)] = [], moved = MLXArray(Float(0)), toEval: [MLXArray] = [loss[0], loss[1]]
-            for (k, g) in grads.flattened() where k.contains("layers.") {
+            for (k, g) in tieColscale(grads.flattened()) where k.contains("layers.") {
                 if let tr = tritState[k] { moved = moved + tr.update(g: g, rho: rhoNow, leak: 1 - 1 / tau, theta: theta, step: step); toEval.append(tr.acc); continue }
                 let mk = 0.9 * (lm[k] ?? zeros(like: g)) + 0.1 * g, vk = 0.999 * (lv[k] ?? zeros(like: g)) + 0.001 * g * g
                 lm[k] = mk; lv[k] = vk
@@ -351,7 +373,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         let b1 = pow(0.9, Float(step)), b2 = pow(0.999, Float(step))
         let current = Dictionary(uniqueKeysWithValues: student.trainableParameters().flattened())
         var fresh: [(String, MLXArray)] = [], moved = MLXArray(Float(0)), toEval: [MLXArray] = [loss[0], loss[1]]
-        for (k, g) in grads.flattened() {
+        for (k, g) in tieColscale(grads.flattened()) {
             if let tr = tritState[k] { moved = moved + tr.update(g: g, rho: rhoNow, leak: 1 - 1 / tau, theta: theta, step: step); toEval.append(tr.acc); continue }
             let mk = 0.9 * (m[k] ?? zeros(like: g)) + 0.1 * g, vk = 0.999 * (v[k] ?? zeros(like: g)) + 0.001 * g * g
             m[k] = mk; v[k] = vk
