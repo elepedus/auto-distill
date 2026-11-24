@@ -214,6 +214,7 @@ let evalSet = evalRaw.map { MLXArray($0) }
 let evalTargets = evalSet.map(teacherLogProbs)
 print(String(format: "teacher NLL on held-out teacher text (reference, ~entropy): %.3f nats/token", zip(evalTargets, evalSet).map { teacherNLL($0, $1) }.reduce(0, +) / Float(evalCount)))
 print("eval set checksum: \(evalRaw.flatMap { $0 }.reduce(0) { ($0 &* 31 &+ Int($1)) & 0xFFFF_FFFF }) (\(evalCount) sequences)")
+print(String(format: "rep4 of held-out teacher text (reference): %.3f", evalRaw.map(rep4).reduce(0, +) / Float(evalCount)))
 MLXRandom.seed(UInt64(seed))
 // Pool entries: (tokens, group, index in group). A group is the decode-step targets (T arrays [n, V]) or a scored chunk [n, T, V].
 enum Targets { case steps([MLXArray]), chunk(MLXArray) }
