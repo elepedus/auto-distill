@@ -166,3 +166,10 @@ About 1.5 hours is deliberately unallocated.
   - PBT-8 with prescale: best 3.36 at 768k, 4 divergences replaced, 222 overflow events.
   - **Queue (ane3):** prescale seeds 1–2, bound+prescale seeds 0–2, base seeds 1–2, then a long run of 8.2M
     tokens with whichever wins. GPU: tern-def seeds 1–2, then tern-def-long (8.2M).
+- 2026-11-24 00:55. **Seeds.**
+  - **GPU tern-def, seeds 0–2:** 2.232 / 2.439 / 2.187. Mean 2.29, std ~0.13, so the D1 rule (std > 0.5)
+    isn't triggered for the GPU path.
+  - **ANE prescale without bound:** seeds 1 and 2 both diverged at ~0.8M tokens ("every member diverged"; seed 0
+    survived to 2.150). **The forward bound is necessary at P=1.** Bound+prescale seeds 0–2 are running now.
+  - **PBT-8 with prescale:** best 2.243 at 2.05M. Replacing diverged members keeps it alive, but it does no
+    better than a lucky P=1 run.
