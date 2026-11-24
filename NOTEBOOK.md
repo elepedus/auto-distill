@@ -197,3 +197,13 @@ About 1.5 hours is deliberately unallocated.
   - Float now leads ternary by ~0.2 nats. That's the first sign of ternary capacity mattering, at d 256 with 3.4M
     trits.
   - Running: seed-1 replicates of both GPU long runs; ANE bound-only seeds and PBT-8 with bound+prescale.
+- 2026-11-24 04:50. **Ablation complete** (2.05M tokens, P=1, default settings, seeds 0/1/2):
+  - **Bound only:** 2.160 / 2.243 / 2.250, mean 2.218 ± 0.05.
+  - **Bound+prescale:** 2.203 / 2.278 / 2.253, mean 2.245 ± 0.04.
+  - **Neither / prescale only:** 4 of 4 diverged, except pre-s0.
+  - So the stabiliser that matters is the bound, on top of the full finite check. Prescale cuts gradient zeros
+    (0.4 → 0.05) but buys no KL here. Keep it off by default.
+  - **PBT-8, bound+prescale:** best 2.172; all 8 members within 2.17–2.21; 0 divergences. PBT drifted to τ ~3–4k
+    and θ 12–19, lr 1.5–2.8e-3. The gain over P=1 defaults is only ~0.05–0.1 at this budget.
+  - **GPU ternary long, seed 1:** 1.811 (seed 0: 1.832).
+  - Remaining: GPU fp32 long seed 1 (~05:30) and ANE long seed 1, bound+prescale (~06:30).
