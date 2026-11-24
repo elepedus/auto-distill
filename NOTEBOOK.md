@@ -437,3 +437,15 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
   - **Accumulators:** `--acc int8`, with the residual init quantised. At 128k tokens: KL 2.81 vs 2.77 for fp32.
   - **Profiling:** `--profile`. Per update: generation ~40% of wall time, then forward+backward, then TTF+Adam. No
     throughput change was committed: bf16 trit copies gave no gain. Contended numbers are unreliable.
+- 2026-11-24 23:20. **Phase B screens** (A2, 512k tokens end to end, TWN, residual accumulator, θ32 τ1000 ρ0.5):
+
+  | trial | start KL | final KL | perplexity |
+  |---|---|---|---|
+  | baseline | 6.55 | 1.898 | 1095 |
+  | colscale (tied) | 6.09 | 1.931 | 1223 |
+  | **layerwise 256k first** | **3.005** after the layerwise phase | **1.138** | **305** |
+
+  - The layerwise phase costs about the same per token as end-to-end training (339 s for 256k under contention).
+  - **The 8.2M cosine baseline was stopped at 2.05M:** KL 1.012, perplexity 265. The 2.05M-schedule run reached
+    1.248 / 456 at the same tokens. Cooling early hurts, so use WSD with a long plateau.
+  - **Screening `--layerwise 1024000`** (then 512k end to end) to size the layerwise phase of the final run.
