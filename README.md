@@ -131,10 +131,10 @@ swift run -c release ane-train [--population 8] [--tokens 2048000] [--round 2560
 - `--loss-scale S`: starting fp16 loss scale (default 1024). It adapts from max |dx₀| unless `--fixed-scale`.
 - `--eval N`: number of held-out teacher sequences (default 8).
 - `--jsonl PATH`: one JSON object per line: `eval`, `train`, `overflow`, `params`, `done`. Non-finite numbers are null.
-- `--grad-prescale`: per-tensor power-of-two scales inside the ANE backward, so token-sum outputs (`ds_*`, `dk*`, `dg_*`)
+- `--grad-prescale` (optional): per-tensor power-of-two scales inside the ANE backward, so token-sum outputs (`ds_*`, `dk*`, `dg_*`)
   and per-element ones (`gp_*`) each fit fp16. Every output is now checked for non-finite values, and an overflowing
   sequence is skipped. See [`results/grad-numerics-2026-11-23.md`](results/grad-numerics-2026-11-23.md).
-- `--bound`, `--bound-alpha A`: after each Adam step, clamp the per-row scales, gains and conv taps so the fp16 forward
+- `--bound`, `--bound-alpha A` (recommended; the stabiliser that matters, see the receipt): after each Adam step, clamp the per-row scales, gains and conv taps so the fp16 forward
   stays below about 16k. A is the practical row-sum factor (0.1; strict worst case 1, which is infeasible). The bound is
   practical, not a proof; attention's `e @ (V·2^8)` is unbounded in the worst case. See
   [`results/forward-bounds-2026-11-24.md`](results/forward-bounds-2026-11-24.md).
@@ -160,7 +160,8 @@ model trained on the GPU with fp32 gradients (`float-train --ternary`) is the re
 
 | path | s0 | s1 | s2 | mean ± std |
 |---|---|---|---|---|
-| ANE ternary, `--grad-prescale --bound` | 2.203 | 2.278 | 2.253 | **2.245 ± 0.04** (0 of 3 diverged) |
+| ANE ternary, `--bound` | 2.160 | 2.243 | 2.250 | **2.218 ± 0.05** (0 of 3 diverged) |
+| ANE ternary, `--grad-prescale --bound` | 2.203 | 2.278 | 2.253 | 2.245 ± 0.04 (0 of 3 diverged) |
 | GPU ternary TTF, fp32 gradients | 2.232 | 2.439 | 2.187 | 2.286 ± 0.13 |
 | ANE ternary, `--grad-prescale` only | 2.150 | diverged ~1.0M | diverged ~1.0M | |
 | ANE ternary, neither | diverged ~0.3M | | | |
@@ -168,9 +169,13 @@ model trained on the GPU with fp32 gradients (`float-train --ternary`) is the re
 The forward bound is needed (without it 3 of 4 runs diverged, from a nonfinite forward as the row scales grow); the
 backward still overflows 60–93 times per run, each detected and skipped. Full curves, flags, caveats (single machine,
 PBT selects on the eval set, attention unbounded) and the JSONL of every run:
-[`results/ane-vs-gpu-2026-11-24.md`](results/ane-vs-gpu-2026-11-24.md).
+[`results/ane-vs-gpu-2026-11-24.md`](results/ane-vs-gpu-2026-11-24.md). Prescale cuts gradient zeros but buys no KL, so it is
+optional.
 
-Long runs (8.2M tokens): pending
+**Long runs (8.2M tokens), held-out KL:** ANE ternary (`--grad-prescale --bound`) seed 0 1.794; GPU ternary seed 0 1.832,
+seed 1 1.811; GPU float fp32 seed 0 1.607. The ANE matches GPU ternary (one ANE seed, so a tie, not a win); float leads
+ternary by about 0.2 nats, the first sign of ternary capacity mattering at d = 256. ANE seed 1 and float seed 1: pending.
+Bound-only at 2.05M: 2.218 ± 0.05 (3 seeds).
 
 **Earlier numbers were wrong.** The first P = 1 results (held-out KL 7.4–9.9 at 2.05M tokens, and the "trunk learns
 slowly" curves below) came from a bug, not from ternary training or fp16 as such: the backward's token-sum outputs
