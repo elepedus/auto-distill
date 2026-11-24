@@ -325,3 +325,27 @@ About 1.5 hours is deliberately unallocated.
       max(GPU, ANE), not the sum;
     - 2-bit palettised weights on the ANE for decode bandwidth (needs a compile-to-disk path; untested).
   - **Queue on the machine lock:** on-policy objective (running) → ternarise → lean TTF.
+- 2026-11-24 17:40. **On-policy objective** (`results/onpolicy2-2026-11-24.md`; float-train --ternary; seeds 0/1).
+  E = half student-written after the midpoint; reverse KL (rkl) or JSD on the student-written text.
+  - **2.05M tokens:**
+
+    | run | held-out KL | teacher NLL of samples | rep4 |
+    |---|---|---|---|
+    | A teacher-led | 2.280 / 2.475 | 1.40 / 1.44 | 0.88 |
+    | E, forward KL | 2.301 / 2.471 | 4.22 / 6.86 | 0.34–0.56 |
+    | E, rkl | 2.301 / 2.219 | 0.92 / 1.14 | 0.92 |
+    | E, JSD | 2.435 / 2.424 | 1.51 / 1.59 | 0.85 |
+
+    Teacher text has rep4 0.556. So the low teacher NLL of A, rkl and JSD samples is mostly repetition (looping text
+    is easy to predict). Forward-KL samples are the only diverse ones.
+  - **8.2M tokens:**
+
+    | run | held-out KL | on-policy KL | teacher NLL | rep4 |
+    |---|---|---|---|---|
+    | A | 1.853 / 1.812 | 1.85 / 1.35 | 2.91 / 2.62 | 0.71–0.75 |
+    | E rkl | 1.945 / 1.876 | 0.88 / 0.82 | 2.49 / 2.70 | 0.71–0.75 |
+
+    rkl halves the on-policy KL but costs ~0.08 held-out KL (same sign on both seeds). NLL is indistinguishable.
+  - **Conclusion:** no on-policy variant clearly wins at this scale. We need a diversity-aware sample-quality
+    metric before judging; teacher NLL alone is gamed by repetition. Park on-policy; keep it as a tool for later
+    (exposure bias does get halved).
