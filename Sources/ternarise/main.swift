@@ -97,7 +97,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
 
     // Wikitext-2 test: BOS + 511 tokens x 64 windows, as `distill eval`.
     let tokenizer = try await AutoTokenizer.from(modelFolder: dir)
-    let text = try String(contentsOf: URL(filePath: option("text") ?? "/tmp/wikitext2-test-nn.txt"), encoding: .utf8)
+    let text = try String(contentsOf: URL(filePath: option("text") ?? "/tmp/wikitext2-test-join.txt"), encoding: .utf8)
     let ids = tokenizer.encode(text: text, addSpecialTokens: false).prefix(64 * 511).map(Int32.init)
     let windows = concatenated([MLXArray.full([64, 1], values: MLXArray(Int32(tokenizer.bosTokenId ?? 1))), MLXArray(ids, [64, 511])], axis: 1)
     func perplexity(_ model: any LLMModel) -> Float {
@@ -116,17 +116,18 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         let parts = path.split(separator: "."), li = parts.firstIndex(of: "layers").flatMap { Int(parts[$0 + 1]) }
         guard let layer = li else { continue }
         let w = lin.weight.asType(.float32)
-        if keep.contains(layer) { keptCount += w.size; m.freeze(); continue }
+        if keep.contains(layer) { keptCount += w.size; m.freeze(); replaced.append((path, m)); continue }
         ternaryCount += w.size
         if ste { replaced.append((path, STELinear(weight: w, bias: nil))); continue }
         let (t, s) = quantise(w, twn: twn)
         zeroTrits += (t .== 0).sum().item(Int.self)
-        let l = TernaryLinear(trits: t, scale: s)
+        var tr: Trits?
         if training {
             let acc = residual ? clip(kappa * 2 * theta * (w / s.expandedDimensions(axis: 1) - t), min: -0.999 * theta, max: 0.999 * theta) : MLXArray.zeros(like: w)
-            let tr = Trits(trits: t, acc: acc)
-            tritState[path + ".weight"] = tr; l.weight = tr.value
+            tr = Trits(trits: t, acc: acc)
+            tritState[path + ".weight"] = tr
         }
+        let l = TernaryLinear(trits: tr?.value ?? t, scale: s)
         eval(l)
         replaced.append((path, l))
     }
@@ -215,7 +216,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
         toEval.append(moved)
         eval(toEval)
         student.update(parameters: ModuleParameters.unflattened(fresh))
-        for (path, mod) in replaced where !ste { (mod as! TernaryLinear).weight = tritState[path + ".weight"]!.value }
+        for (path, mod) in replaced { if let l = mod as? TernaryLinear { l.update(parameters: ModuleParameters.unflattened([("weight", tritState[path + ".weight"]!.value)])) } }
         working += Date().timeIntervalSince(t0)
         let f = moved.item(Float.self); flipsRecent += f; flipsTotal += f
         recent += Double(loss[0].item(Float.self)); recentAlpha += Double(loss[1].item(Float.self)); recentCount += 1
