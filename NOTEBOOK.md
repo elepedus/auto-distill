@@ -297,3 +297,17 @@ About 1.5 hours is deliberately unallocated.
     - a 64-sample on-policy eval;
     - budgets of 8.2M tokens, where exposure bias should matter more;
     - port to the ANE only after a clear winner.
+- 2026-11-24 15:00. **North star, restated by the user.** Mould great pretrained models (multi-B parameters, possibly
+  MoE or omni) into hardware-suited ternary or ANE-shaped forms via distillation, with maximum efficiency. LFM2-350M is
+  only a testbed.
+  - **Consequences:**
+    - **Bytes per parameter is a first-class metric.** fp32 master weights plus Adam is ~14 B/param, which doesn't
+      fit at 8B beside a teacher. TTF today is 6 B/param; a lean TTF could be ~1.25. So TTF stays the path, and its
+      ~0.25-nat long-budget gap is a problem to close.
+    - **Teacher FLOPs per token is the other floor.** Levers: layerwise local distillation first, then end-to-end
+      KL; a population sharing one teacher pass; deliberate reuse of targets.
+    - **Headline metrics:** tokens and wall-clock to recover X% of the gap.
+  - **Started:** `ternarise`.
+    - Ternarise LFM2-350M (absmean vs TWN, optionally keeping the first and last layers in fp).
+    - Recover with TTF from a zero accumulator vs one initialised from the rounding residual.
+    - fp32-master STE as an upper-bound reference only.
