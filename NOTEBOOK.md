@@ -173,3 +173,15 @@ About 1.5 hours is deliberately unallocated.
     survived to 2.150). **The forward bound is necessary at P=1.** Bound+prescale seeds 0–2 are running now.
   - **PBT-8 with prescale:** best 2.243 at 2.05M. Replacing diverged members keeps it alive, but it does no
     better than a lucky P=1 run.
+- 2026-11-24 01:55. **Headline holds across seeds.** Held-out KL at 2.05M tokens, P=1, default settings:
+
+  | path | s0 | s1 | s2 | mean ± std |
+  |---|---|---|---|---|
+  | ANE ternary, `--grad-prescale --bound` | 2.203 | 2.278 | 2.253 | **2.245 ± 0.04** (0/3 diverged) |
+  | GPU ternary TTF, fp32 gradients | 2.232 | 2.439 | 2.187 | 2.286 ± 0.13 |
+  | ANE ternary, `--grad-prescale` only | 2.150 | diverged ~0.8M | diverged ~0.8M | |
+  | ANE ternary, neither (post-fix) | diverged ~0.3M | | | |
+
+  - **GPU tern-def-long (8.2M tokens, cosine over the whole run):** 3.05 at 1M, 2.82 at 2M, 2.33 at 3M, 2.16 at
+    4M, 2.06 at 5M, 1.92 at 6M, 1.84 at 7M, **1.832** at 8.2M. The ANE long run (bound+prescale, 8.2M) has
+    started.
