@@ -242,3 +242,17 @@ About 1.5 hours is deliberately unallocated.
        β = 0 is pure on-policy.
      - **Arms (float-train --ternary first):** teacher-led, a fixed switch, a λ ramp, and an α-triggered switch.
      - **Evals:** held-out KL on teacher text, plus the teacher's KL/NLL on the student's own samples.
+- 2026-11-24 11:45. **The float lead was the optimiser, not ternary capacity.**
+  `float-train --ternary-ste` (fp32 master weights, per-row absmean STE, lr 1e-3; receipt
+  `results/ternary-ste-2026-11-24.md`):
+
+  | run | 8.2M tokens, s0 / s1 | mean | 2.05M tokens, s0 / s1 |
+  |---|---|---|---|
+  | STE ternary | 1.616 / 1.505 | 1.56 | 2.275 / 2.538 |
+  | float fp32 | 1.607 / 1.555 | 1.58 | 2.390 (s0 only) |
+  | TTF ternary | 1.832 / 1.811 | 1.82 | 2.232 / 2.439 / 2.187 |
+
+  - TTF's disadvantage appears only after ~2M tokens. n = 2; STE vs float is unresolved, but STE beats TTF on
+    both seeds.
+  - Implication for the ANE: master-weight-free TTF costs ~0.25 nats at long budgets. Options: switch from TTF
+    to master weights later in training, use low-precision master weights, or retune θ/τ for long runs.
