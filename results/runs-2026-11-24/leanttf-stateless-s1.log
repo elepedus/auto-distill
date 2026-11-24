@@ -1,0 +1,367 @@
+teacher NLL on held-out teacher text (reference, ~entropy): 1.892 nats/token
+eval set checksum: 753177917 (8 sequences)
+float-train: 16793216 parameters; 8000 updates of 256 tokens; lr 0.002; ternary TTF theta 16.0 tau 1000.0 rho x 1.0; scheduled
+eval at 0 tokens: held-out kl 9.173 alpha 0.042 | on-policy kl 3.233 teacher nll 13.839 alpha 0.227 (0.6s)  lr 2.00e-03
+pool refill at 0 tokens: lambda 0.000 (alpha-bar 0.000), 0 student + 256 teacher sequences, 8.9s
+update     1  tokens      256  train kl 10.653 alpha 0.007  flips 35662  26 tok/s
+update    25  tokens     6400  train kl 10.058 alpha 0.018  flips 23025  617 tok/s
+update    50  tokens    12800  train kl 9.951 alpha 0.018  flips 20595  1158 tok/s
+update    75  tokens    19200  train kl 9.587 alpha 0.026  flips 21683  1636 tok/s
+update   100  tokens    25600  train kl 9.886 alpha 0.019  flips 28095  2064 tok/s
+update   125  tokens    32000  train kl 9.129 alpha 0.025  flips 24069  2447 tok/s
+update   150  tokens    38400  train kl 8.869 alpha 0.021  flips 25575  2792 tok/s
+update   175  tokens    44800  train kl 8.599 alpha 0.025  flips 20644  3106 tok/s
+update   200  tokens    51200  train kl 8.386 alpha 0.024  flips 31374  3393 tok/s
+update   225  tokens    57600  train kl 8.503 alpha 0.021  flips 39628  3654 tok/s
+update   250  tokens    64000  train kl 7.716 alpha 0.033  flips 20059  3884 tok/s
+pool refill at 65536 tokens: lambda 0.000 (alpha-bar 0.029), 0 student + 256 teacher sequences, 8.5s
+update   275  tokens    70400  train kl 7.833 alpha 0.033  flips 29233  2732 tok/s
+update   300  tokens    76800  train kl 7.548 alpha 0.030  flips 43569  2904 tok/s
+update   325  tokens    83200  train kl 7.891 alpha 0.022  flips 33734  3067 tok/s
+update   350  tokens    89600  train kl 8.687 alpha 0.018  flips 29966  3223 tok/s
+update   375  tokens    96000  train kl 8.295 alpha 0.031  flips 41886  3371 tok/s
+update   400  tokens   102400  train kl 8.449 alpha 0.029  flips 45311  3511 tok/s
+update   425  tokens   108800  train kl 8.114 alpha 0.034  flips 53236  3646 tok/s
+update   450  tokens   115200  train kl 8.292 alpha 0.037  flips 47389  3776 tok/s
+update   475  tokens   121600  train kl 7.446 alpha 0.055  flips 40466  3898 tok/s
+update   500  tokens   128000  train kl 7.799 alpha 0.053  flips 50346  4011 tok/s
+pool refill at 131072 tokens: lambda 0.000 (alpha-bar 0.055), 0 student + 256 teacher sequences, 8.0s
+update   525  tokens   134400  train kl 7.989 alpha 0.048  flips 45772  3302 tok/s
+update   550  tokens   140800  train kl 8.134 alpha 0.053  flips 40003  3403 tok/s
+update   575  tokens   147200  train kl 7.735 alpha 0.035  flips 52886  3501 tok/s
+update   600  tokens   153600  train kl 7.998 alpha 0.028  flips 41962  3596 tok/s
+update   625  tokens   160000  train kl 7.339 alpha 0.036  flips 61720  3688 tok/s
+update   650  tokens   166400  train kl 8.272 alpha 0.034  flips 45263  3777 tok/s
+update   675  tokens   172800  train kl 7.252 alpha 0.047  flips 47907  3864 tok/s
+update   700  tokens   179200  train kl 7.266 alpha 0.076  flips 49460  3948 tok/s
+update   725  tokens   185600  train kl 7.661 alpha 0.060  flips 53319  4029 tok/s
+update   750  tokens   192000  train kl 7.557 alpha 0.074  flips 46950  4108 tok/s
+pool refill at 196608 tokens: lambda 0.000 (alpha-bar 0.057), 0 student + 256 teacher sequences, 8.5s
+update   775  tokens   198400  train kl 7.325 alpha 0.031  flips 60150  3544 tok/s
+update   800  tokens   204800  train kl 8.362 alpha 0.043  flips 38962  3613 tok/s
+update   825  tokens   211200  train kl 8.249 alpha 0.043  flips 32480  3682 tok/s
+update   850  tokens   217600  train kl 7.344 alpha 0.043  flips 62056  3749 tok/s
+update   875  tokens   224000  train kl 7.309 alpha 0.047  flips 60441  3815 tok/s
+update   900  tokens   230400  train kl 7.395 alpha 0.042  flips 48534  3880 tok/s
+update   925  tokens   236800  train kl 7.967 alpha 0.040  flips 54910  3943 tok/s
+update   950  tokens   243200  train kl 7.083 alpha 0.087  flips 36187  4004 tok/s
+update   975  tokens   249600  train kl 6.781 alpha 0.112  flips 47705  4064 tok/s
+update  1000  tokens   256000  train kl 7.705 alpha 0.049  flips 45121  4122 tok/s
+eval at 256000 tokens: held-out kl 6.598 alpha 0.057 | on-policy kl 3.528 teacher nll 12.140 alpha 0.209 (0.5s)  lr 2.00e-03
+pool refill at 262144 tokens: lambda 0.000 (alpha-bar 0.048), 0 student + 256 teacher sequences, 8.9s
+update  1025  tokens   262400  train kl 6.764 alpha 0.048  flips 79200  3628 tok/s
+update  1050  tokens   268800  train kl 7.661 alpha 0.037  flips 52432  3681 tok/s
+update  1075  tokens   275200  train kl 7.085 alpha 0.075  flips 42793  3733 tok/s
+update  1100  tokens   281600  train kl 7.140 alpha 0.043  flips 49333  3785 tok/s
+update  1125  tokens   288000  train kl 7.745 alpha 0.045  flips 29131  3837 tok/s
+update  1150  tokens   294400  train kl 7.838 alpha 0.044  flips 40278  3888 tok/s
+update  1175  tokens   300800  train kl 7.240 alpha 0.054  flips 56083  3937 tok/s
+update  1200  tokens   307200  train kl 7.605 alpha 0.122  flips 56526  3987 tok/s
+update  1225  tokens   313600  train kl 6.870 alpha 0.099  flips 54204  4035 tok/s
+update  1250  tokens   320000  train kl 8.117 alpha 0.034  flips 42503  4082 tok/s
+update  1275  tokens   326400  train kl 6.997 alpha 0.030  flips 57996  4128 tok/s
+pool refill at 327680 tokens: lambda 0.000 (alpha-bar 0.031), 0 student + 256 teacher sequences, 8.0s
+update  1300  tokens   332800  train kl 7.476 alpha 0.034  flips 51776  3790 tok/s
+update  1325  tokens   339200  train kl 7.953 alpha 0.041  flips 46734  3834 tok/s
+update  1350  tokens   345600  train kl 7.186 alpha 0.053  flips 45274  3876 tok/s
+update  1375  tokens   352000  train kl 7.522 alpha 0.043  flips 42638  3919 tok/s
+update  1400  tokens   358400  train kl 6.626 alpha 0.049  flips 63740  3961 tok/s
+update  1425  tokens   364800  train kl 6.902 alpha 0.091  flips 50604  4002 tok/s
+update  1450  tokens   371200  train kl 6.994 alpha 0.050  flips 54043  4043 tok/s
+update  1475  tokens   377600  train kl 7.029 alpha 0.096  flips 53158  4083 tok/s
+update  1500  tokens   384000  train kl 5.935 alpha 0.086  flips 36034  4123 tok/s
+update  1525  tokens   390400  train kl 7.242 alpha 0.058  flips 49500  4162 tok/s
+pool refill at 393216 tokens: lambda 0.000 (alpha-bar 0.065), 0 student + 256 teacher sequences, 8.0s
+update  1550  tokens   396800  train kl 7.239 alpha 0.054  flips 50657  3869 tok/s
+update  1575  tokens   403200  train kl 6.883 alpha 0.109  flips 53268  3906 tok/s
+update  1600  tokens   409600  train kl 6.976 alpha 0.085  flips 55847  3943 tok/s
+update  1625  tokens   416000  train kl 8.006 alpha 0.046  flips 48609  3979 tok/s
+update  1650  tokens   422400  train kl 6.851 alpha 0.077  flips 63041  4015 tok/s
+update  1675  tokens   428800  train kl 7.272 alpha 0.060  flips 43900  4050 tok/s
+update  1700  tokens   435200  train kl 7.167 alpha 0.065  flips 49425  4085 tok/s
+update  1725  tokens   441600  train kl 6.598 alpha 0.092  flips 47473  4119 tok/s
+update  1750  tokens   448000  train kl 6.648 alpha 0.076  flips 44331  4153 tok/s
+update  1775  tokens   454400  train kl 6.834 alpha 0.075  flips 53075  4186 tok/s
+pool refill at 458752 tokens: lambda 0.000 (alpha-bar 0.081), 0 student + 256 teacher sequences, 8.0s
+update  1800  tokens   460800  train kl 7.375 alpha 0.061  flips 49029  3928 tok/s
+update  1825  tokens   467200  train kl 6.286 alpha 0.134  flips 60777  3961 tok/s
+update  1850  tokens   473600  train kl 6.317 alpha 0.076  flips 49018  3992 tok/s
+update  1875  tokens   480000  train kl 6.581 alpha 0.069  flips 47052  4024 tok/s
+update  1900  tokens   486400  train kl 6.677 alpha 0.088  flips 48474  4055 tok/s
+update  1925  tokens   492800  train kl 7.305 alpha 0.052  flips 54073  4085 tok/s
+update  1950  tokens   499200  train kl 8.319 alpha 0.031  flips 57052  4114 tok/s
+update  1975  tokens   505600  train kl 7.277 alpha 0.026  flips 52312  4144 tok/s
+update  2000  tokens   512000  train kl 7.083 alpha 0.047  flips 50666  4173 tok/s
+eval at 512000 tokens: held-out kl 6.456 alpha 0.048 | on-policy kl 3.223 teacher nll 11.037 alpha 0.219 (0.5s)  lr 2.00e-03
+update  2025  tokens   518400  train kl 6.584 alpha 0.057  flips 47605  4183 tok/s
+pool refill at 524288 tokens: lambda 0.000 (alpha-bar 0.056), 0 student + 256 teacher sequences, 8.2s
+update  2050  tokens   524800  train kl 7.529 alpha 0.056  flips 33228  3948 tok/s
+update  2075  tokens   531200  train kl 6.236 alpha 0.124  flips 49808  3976 tok/s
+update  2100  tokens   537600  train kl 7.086 alpha 0.069  flips 50960  4003 tok/s
+update  2125  tokens   544000  train kl 7.165 alpha 0.041  flips 60987  4031 tok/s
+update  2150  tokens   550400  train kl 7.836 alpha 0.051  flips 44838  4058 tok/s
+update  2175  tokens   556800  train kl 7.840 alpha 0.040  flips 39434  4085 tok/s
+update  2200  tokens   563200  train kl 6.774 alpha 0.082  flips 48369  4111 tok/s
+update  2225  tokens   569600  train kl 6.657 alpha 0.067  flips 42318  4138 tok/s
+update  2250  tokens   576000  train kl 6.512 alpha 0.057  flips 42456  4163 tok/s
+update  2275  tokens   582400  train kl 7.316 alpha 0.041  flips 48564  4187 tok/s
+update  2300  tokens   588800  train kl 7.025 alpha 0.051  flips 49938  4211 tok/s
+pool refill at 589824 tokens: lambda 0.000 (alpha-bar 0.044), 0 student + 256 teacher sequences, 8.1s
+update  2325  tokens   595200  train kl 7.388 alpha 0.038  flips 48619  4004 tok/s
+update  2350  tokens   601600  train kl 7.437 alpha 0.039  flips 44660  4029 tok/s
+update  2375  tokens   608000  train kl 6.536 alpha 0.121  flips 37483  4054 tok/s
+update  2400  tokens   614400  train kl 7.121 alpha 0.052  flips 57593  4077 tok/s
+update  2425  tokens   620800  train kl 7.680 alpha 0.051  flips 48480  4099 tok/s
+update  2450  tokens   627200  train kl 6.599 alpha 0.062  flips 44708  4122 tok/s
+update  2475  tokens   633600  train kl 6.930 alpha 0.047  flips 42873  4145 tok/s
+update  2500  tokens   640000  train kl 6.786 alpha 0.055  flips 51607  4168 tok/s
+update  2525  tokens   646400  train kl 7.830 alpha 0.041  flips 44925  4192 tok/s
+update  2550  tokens   652800  train kl 7.282 alpha 0.053  flips 39203  4215 tok/s
+pool refill at 655360 tokens: lambda 0.000 (alpha-bar 0.050), 0 student + 256 teacher sequences, 8.1s
+update  2575  tokens   659200  train kl 6.403 alpha 0.083  flips 37253  4028 tok/s
+update  2600  tokens   665600  train kl 6.974 alpha 0.055  flips 42159  4050 tok/s
+update  2625  tokens   672000  train kl 6.271 alpha 0.062  flips 55241  4073 tok/s
+update  2650  tokens   678400  train kl 7.226 alpha 0.083  flips 41385  4095 tok/s
+update  2675  tokens   684800  train kl 6.607 alpha 0.076  flips 46460  4117 tok/s
+update  2700  tokens   691200  train kl 6.028 alpha 0.124  flips 30638  4138 tok/s
+update  2725  tokens   697600  train kl 6.372 alpha 0.087  flips 35063  4159 tok/s
+update  2750  tokens   704000  train kl 7.160 alpha 0.072  flips 49274  4181 tok/s
+update  2775  tokens   710400  train kl 6.983 alpha 0.068  flips 50985  4201 tok/s
+update  2800  tokens   716800  train kl 6.333 alpha 0.083  flips 47907  4221 tok/s
+pool refill at 720896 tokens: lambda 0.000 (alpha-bar 0.076), 0 student + 256 teacher sequences, 8.9s
+update  2825  tokens   723200  train kl 7.241 alpha 0.071  flips 42220  4030 tok/s
+update  2850  tokens   729600  train kl 6.922 alpha 0.046  flips 42915  4051 tok/s
+update  2875  tokens   736000  train kl 6.532 alpha 0.096  flips 44910  4071 tok/s
+update  2900  tokens   742400  train kl 7.700 alpha 0.039  flips 39697  4091 tok/s
+update  2925  tokens   748800  train kl 6.808 alpha 0.067  flips 37566  4111 tok/s
+update  2950  tokens   755200  train kl 7.025 alpha 0.095  flips 34828  4131 tok/s
+update  2975  tokens   761600  train kl 6.306 alpha 0.057  flips 40259  4150 tok/s
+update  3000  tokens   768000  train kl 5.734 alpha 0.084  flips 39854  4170 tok/s
+eval at 768000 tokens: held-out kl 6.205 alpha 0.058 | on-policy kl 2.457 teacher nll 5.238 alpha 0.536 (0.5s)  lr 2.00e-03
+update  3025  tokens   774400  train kl 6.945 alpha 0.089  flips 23789  4176 tok/s
+update  3050  tokens   780800  train kl 6.361 alpha 0.065  flips 52574  4195 tok/s
+pool refill at 786432 tokens: lambda 0.000 (alpha-bar 0.095), 0 student + 256 teacher sequences, 8.6s
+update  3075  tokens   787200  train kl 6.237 alpha 0.126  flips 39776  4027 tok/s
+update  3100  tokens   793600  train kl 7.790 alpha 0.032  flips 38117  4046 tok/s
+update  3125  tokens   800000  train kl 7.190 alpha 0.054  flips 33191  4064 tok/s
+update  3150  tokens   806400  train kl 7.158 alpha 0.110  flips 45915  4083 tok/s
+update  3175  tokens   812800  train kl 5.572 alpha 0.102  flips 42715  4101 tok/s
+update  3200  tokens   819200  train kl 7.095 alpha 0.032  flips 44743  4119 tok/s
+update  3225  tokens   825600  train kl 7.609 alpha 0.067  flips 36539  4137 tok/s
+update  3250  tokens   832000  train kl 7.195 alpha 0.096  flips 37876  4155 tok/s
+update  3275  tokens   838400  train kl 6.966 alpha 0.101  flips 51269  4173 tok/s
+update  3300  tokens   844800  train kl 6.693 alpha 0.122  flips 32026  4190 tok/s
+update  3325  tokens   851200  train kl 7.617 alpha 0.039  flips 41510  4208 tok/s
+pool refill at 851968 tokens: lambda 0.000 (alpha-bar 0.079), 0 student + 256 teacher sequences, 8.1s
+update  3350  tokens   857600  train kl 6.798 alpha 0.069  flips 39432  4062 tok/s
+update  3375  tokens   864000  train kl 7.032 alpha 0.075  flips 27393  4079 tok/s
+update  3400  tokens   870400  train kl 7.697 alpha 0.052  flips 43421  4097 tok/s
+update  3425  tokens   876800  train kl 6.454 alpha 0.080  flips 37611  4114 tok/s
+update  3450  tokens   883200  train kl 6.137 alpha 0.061  flips 47943  4131 tok/s
+update  3475  tokens   889600  train kl 6.580 alpha 0.077  flips 29538  4147 tok/s
+update  3500  tokens   896000  train kl 6.106 alpha 0.105  flips 28853  4163 tok/s
+update  3525  tokens   902400  train kl 7.076 alpha 0.078  flips 36427  4180 tok/s
+update  3550  tokens   908800  train kl 6.612 alpha 0.076  flips 36744  4196 tok/s
+update  3575  tokens   915200  train kl 6.184 alpha 0.093  flips 43550  4213 tok/s
+pool refill at 917504 tokens: lambda 0.000 (alpha-bar 0.079), 0 student + 256 teacher sequences, 8.1s
+update  3600  tokens   921600  train kl 8.004 alpha 0.043  flips 30068  4077 tok/s
+update  3625  tokens   928000  train kl 6.511 alpha 0.078  flips 38531  4093 tok/s
+update  3650  tokens   934400  train kl 6.669 alpha 0.070  flips 34805  4108 tok/s
+update  3675  tokens   940800  train kl 6.649 alpha 0.062  flips 42350  4124 tok/s
+update  3700  tokens   947200  train kl 6.022 alpha 0.085  flips 34655  4140 tok/s
+update  3725  tokens   953600  train kl 6.089 alpha 0.107  flips 29408  4156 tok/s
+update  3750  tokens   960000  train kl 6.660 alpha 0.084  flips 31487  4171 tok/s
+update  3775  tokens   966400  train kl 7.000 alpha 0.078  flips 40628  4187 tok/s
+update  3800  tokens   972800  train kl 6.120 alpha 0.113  flips 31806  4202 tok/s
+update  3825  tokens   979200  train kl 6.814 alpha 0.102  flips 31401  4217 tok/s
+pool refill at 983040 tokens: lambda 0.000 (alpha-bar 0.112), 0 student + 256 teacher sequences, 8.2s
+update  3850  tokens   985600  train kl 7.391 alpha 0.061  flips 36597  4087 tok/s
+update  3875  tokens   992000  train kl 5.770 alpha 0.099  flips 35554  4102 tok/s
+update  3900  tokens   998400  train kl 7.085 alpha 0.121  flips 36771  4117 tok/s
+update  3925  tokens  1004800  train kl 7.247 alpha 0.086  flips 27004  4132 tok/s
+update  3950  tokens  1011200  train kl 6.612 alpha 0.099  flips 44673  4146 tok/s
+update  3975  tokens  1017600  train kl 6.657 alpha 0.068  flips 34892  4161 tok/s
+update  4000  tokens  1024000  train kl 6.145 alpha 0.080  flips 28723  4176 tok/s
+eval at 1024000 tokens: held-out kl 5.683 alpha 0.081 | on-policy kl 2.907 teacher nll 8.542 alpha 0.407 (0.5s)  lr 2.00e-03
+update  4025  tokens  1030400  train kl 6.210 alpha 0.074  flips 54874  4181 tok/s
+update  4050  tokens  1036800  train kl 7.042 alpha 0.045  flips 24797  4195 tok/s
+update  4075  tokens  1043200  train kl 7.077 alpha 0.066  flips 24966  4209 tok/s
+pool refill at 1048576 tokens: lambda 0.000 (alpha-bar 0.060), 0 student + 256 teacher sequences, 8.1s
+update  4100  tokens  1049600  train kl 7.660 alpha 0.053  flips 28742  4090 tok/s
+update  4125  tokens  1056000  train kl 7.158 alpha 0.059  flips 34845  4104 tok/s
+update  4150  tokens  1062400  train kl 6.767 alpha 0.045  flips 34237  4118 tok/s
+update  4175  tokens  1068800  train kl 6.489 alpha 0.071  flips 33020  4132 tok/s
+update  4200  tokens  1075200  train kl 7.480 alpha 0.064  flips 27112  4146 tok/s
+update  4225  tokens  1081600  train kl 6.275 alpha 0.107  flips 29008  4159 tok/s
+update  4250  tokens  1088000  train kl 7.173 alpha 0.063  flips 31781  4173 tok/s
+update  4275  tokens  1094400  train kl 7.071 alpha 0.056  flips 34287  4186 tok/s
+update  4300  tokens  1100800  train kl 7.286 alpha 0.078  flips 23911  4200 tok/s
+update  4325  tokens  1107200  train kl 7.493 alpha 0.051  flips 28453  4213 tok/s
+update  4350  tokens  1113600  train kl 6.907 alpha 0.060  flips 33481  4226 tok/s
+pool refill at 1114112 tokens: lambda 0.000 (alpha-bar 0.054), 0 student + 256 teacher sequences, 8.1s
+update  4375  tokens  1120000  train kl 5.713 alpha 0.175  flips 27151  4113 tok/s
+update  4400  tokens  1126400  train kl 6.221 alpha 0.112  flips 40283  4126 tok/s
+update  4425  tokens  1132800  train kl 6.919 alpha 0.069  flips 30119  4140 tok/s
+update  4450  tokens  1139200  train kl 6.968 alpha 0.064  flips 30303  4153 tok/s
+update  4475  tokens  1145600  train kl 5.898 alpha 0.105  flips 28434  4166 tok/s
+update  4500  tokens  1152000  train kl 6.253 alpha 0.087  flips 33115  4179 tok/s
+update  4525  tokens  1158400  train kl 5.773 alpha 0.156  flips 28298  4192 tok/s
+update  4550  tokens  1164800  train kl 6.676 alpha 0.089  flips 23887  4205 tok/s
+update  4575  tokens  1171200  train kl 7.023 alpha 0.047  flips 25066  4217 tok/s
+update  4600  tokens  1177600  train kl 6.990 alpha 0.114  flips 34465  4230 tok/s
+pool refill at 1179648 tokens: lambda 0.000 (alpha-bar 0.102), 0 student + 256 teacher sequences, 8.6s
+update  4625  tokens  1184000  train kl 5.654 alpha 0.140  flips 21271  4115 tok/s
+update  4650  tokens  1190400  train kl 6.040 alpha 0.189  flips 22961  4128 tok/s
+update  4675  tokens  1196800  train kl 6.681 alpha 0.064  flips 31503  4141 tok/s
+update  4700  tokens  1203200  train kl 6.479 alpha 0.089  flips 24587  4153 tok/s
+update  4725  tokens  1209600  train kl 6.953 alpha 0.038  flips 36032  4165 tok/s
+update  4750  tokens  1216000  train kl 6.924 alpha 0.070  flips 25958  4178 tok/s
+update  4775  tokens  1222400  train kl 7.572 alpha 0.054  flips 23581  4190 tok/s
+update  4800  tokens  1228800  train kl 6.068 alpha 0.122  flips 26662  4202 tok/s
+update  4825  tokens  1235200  train kl 6.258 alpha 0.099  flips 21716  4213 tok/s
+update  4850  tokens  1241600  train kl 6.311 alpha 0.115  flips 29707  4225 tok/s
+pool refill at 1245184 tokens: lambda 0.000 (alpha-bar 0.117), 0 student + 256 teacher sequences, 9.1s
+update  4875  tokens  1248000  train kl 6.467 alpha 0.089  flips 31025  4109 tok/s
+update  4900  tokens  1254400  train kl 6.706 alpha 0.093  flips 28629  4120 tok/s
+update  4925  tokens  1260800  train kl 6.386 alpha 0.063  flips 27067  4132 tok/s
+update  4950  tokens  1267200  train kl 6.243 alpha 0.111  flips 24909  4144 tok/s
+update  4975  tokens  1273600  train kl 6.157 alpha 0.151  flips 25651  4156 tok/s
+update  5000  tokens  1280000  train kl 7.435 alpha 0.042  flips 24666  4167 tok/s
+eval at 1280000 tokens: held-out kl 5.765 alpha 0.123 | on-policy kl 2.688 teacher nll 7.292 alpha 0.398 (0.5s)  lr 2.00e-03
+update  5025  tokens  1286400  train kl 7.183 alpha 0.059  flips 22477  4171 tok/s
+update  5050  tokens  1292800  train kl 6.039 alpha 0.089  flips 26302  4183 tok/s
+update  5075  tokens  1299200  train kl 5.920 alpha 0.149  flips 26621  4194 tok/s
+update  5100  tokens  1305600  train kl 6.683 alpha 0.090  flips 22139  4206 tok/s
+pool refill at 1310720 tokens: lambda 0.000 (alpha-bar 0.103), 0 student + 256 teacher sequences, 8.7s
+update  5125  tokens  1312000  train kl 6.137 alpha 0.083  flips 27176  4101 tok/s
+update  5150  tokens  1318400  train kl 6.204 alpha 0.082  flips 27329  4112 tok/s
+update  5175  tokens  1324800  train kl 7.178 alpha 0.058  flips 22088  4123 tok/s
+update  5200  tokens  1331200  train kl 6.812 alpha 0.069  flips 20594  4134 tok/s
+update  5225  tokens  1337600  train kl 6.500 alpha 0.080  flips 22683  4144 tok/s
+update  5250  tokens  1344000  train kl 6.277 alpha 0.080  flips 24798  4155 tok/s
+update  5275  tokens  1350400  train kl 5.810 alpha 0.145  flips 28728  4166 tok/s
+update  5300  tokens  1356800  train kl 6.803 alpha 0.060  flips 20977  4177 tok/s
+update  5325  tokens  1363200  train kl 6.550 alpha 0.112  flips 24216  4188 tok/s
+update  5350  tokens  1369600  train kl 6.983 alpha 0.101  flips 19217  4199 tok/s
+update  5375  tokens  1376000  train kl 5.819 alpha 0.119  flips 26701  4210 tok/s
+pool refill at 1376256 tokens: lambda 0.000 (alpha-bar 0.109), 0 student + 256 teacher sequences, 8.9s
+update  5400  tokens  1382400  train kl 7.138 alpha 0.073  flips 21631  4109 tok/s
+update  5425  tokens  1388800  train kl 6.049 alpha 0.083  flips 28189  4120 tok/s
+update  5450  tokens  1395200  train kl 7.109 alpha 0.070  flips 17223  4130 tok/s
+update  5475  tokens  1401600  train kl 6.481 alpha 0.050  flips 25169  4141 tok/s
+update  5500  tokens  1408000  train kl 6.806 alpha 0.079  flips 21169  4152 tok/s
+update  5525  tokens  1414400  train kl 6.050 alpha 0.118  flips 16548  4162 tok/s
+update  5550  tokens  1420800  train kl 6.184 alpha 0.160  flips 18183  4173 tok/s
+update  5575  tokens  1427200  train kl 4.897 alpha 0.210  flips 20226  4183 tok/s
+update  5600  tokens  1433600  train kl 6.362 alpha 0.110  flips 17802  4193 tok/s
+update  5625  tokens  1440000  train kl 6.721 alpha 0.106  flips 17145  4203 tok/s
+pool refill at 1441792 tokens: lambda 0.000 (alpha-bar 0.121), 0 student + 256 teacher sequences, 8.7s
+update  5650  tokens  1446400  train kl 6.514 alpha 0.079  flips 24524  4109 tok/s
+update  5675  tokens  1452800  train kl 7.261 alpha 0.070  flips 20269  4119 tok/s
+update  5700  tokens  1459200  train kl 6.678 alpha 0.080  flips 18892  4130 tok/s
+update  5725  tokens  1465600  train kl 7.002 alpha 0.114  flips 15800  4140 tok/s
+update  5750  tokens  1472000  train kl 6.419 alpha 0.055  flips 23152  4150 tok/s
+update  5775  tokens  1478400  train kl 6.662 alpha 0.092  flips 18141  4160 tok/s
+update  5800  tokens  1484800  train kl 6.464 alpha 0.095  flips 16280  4170 tok/s
+update  5825  tokens  1491200  train kl 6.854 alpha 0.061  flips 20706  4180 tok/s
+update  5850  tokens  1497600  train kl 6.894 alpha 0.043  flips 23981  4190 tok/s
+update  5875  tokens  1504000  train kl 6.739 alpha 0.117  flips 17989  4200 tok/s
+pool refill at 1507328 tokens: lambda 0.000 (alpha-bar 0.116), 0 student + 256 teacher sequences, 9.1s
+update  5900  tokens  1510400  train kl 5.556 alpha 0.171  flips 16884  4106 tok/s
+update  5925  tokens  1516800  train kl 7.270 alpha 0.079  flips 17758  4115 tok/s
+update  5950  tokens  1523200  train kl 5.722 alpha 0.083  flips 17757  4125 tok/s
+update  5975  tokens  1529600  train kl 6.691 alpha 0.053  flips 17747  4135 tok/s
+update  6000  tokens  1536000  train kl 6.268 alpha 0.087  flips 19119  4145 tok/s
+eval at 1536000 tokens: held-out kl 5.319 alpha 0.255 | on-policy kl 2.505 teacher nll 7.763 alpha 0.454 (0.5s)  lr 2.00e-03
+update  6025  tokens  1542400  train kl 6.788 alpha 0.070  flips 17607  4148 tok/s
+update  6050  tokens  1548800  train kl 7.426 alpha 0.068  flips 16297  4158 tok/s
+update  6075  tokens  1555200  train kl 5.634 alpha 0.114  flips 16924  4167 tok/s
+update  6100  tokens  1561600  train kl 6.680 alpha 0.087  flips 16136  4177 tok/s
+update  6125  tokens  1568000  train kl 6.006 alpha 0.108  flips 16045  4186 tok/s
+pool refill at 1572864 tokens: lambda 0.000 (alpha-bar 0.113), 0 student + 256 teacher sequences, 8.7s
+update  6150  tokens  1574400  train kl 6.644 alpha 0.093  flips 17614  4100 tok/s
+update  6175  tokens  1580800  train kl 5.722 alpha 0.164  flips 19339  4110 tok/s
+update  6200  tokens  1587200  train kl 6.827 alpha 0.045  flips 19157  4119 tok/s
+update  6225  tokens  1593600  train kl 6.687 alpha 0.060  flips 16408  4128 tok/s
+update  6250  tokens  1600000  train kl 5.937 alpha 0.111  flips 14715  4137 tok/s
+update  6275  tokens  1606400  train kl 5.964 alpha 0.162  flips 11795  4146 tok/s
+update  6300  tokens  1612800  train kl 6.735 alpha 0.088  flips 17654  4155 tok/s
+update  6325  tokens  1619200  train kl 5.553 alpha 0.143  flips 19829  4164 tok/s
+update  6350  tokens  1625600  train kl 6.468 alpha 0.136  flips 13668  4173 tok/s
+update  6375  tokens  1632000  train kl 5.935 alpha 0.157  flips 18627  4182 tok/s
+update  6400  tokens  1638400  train kl 6.151 alpha 0.106  flips 16240  4191 tok/s
+pool refill at 1638400 tokens: lambda 0.000 (alpha-bar 0.131), 0 student + 256 teacher sequences, 8.7s
+update  6425  tokens  1644800  train kl 6.433 alpha 0.136  flips 13373  4109 tok/s
+update  6450  tokens  1651200  train kl 5.264 alpha 0.213  flips 16096  4118 tok/s
+update  6475  tokens  1657600  train kl 7.014 alpha 0.102  flips 13517  4127 tok/s
+update  6500  tokens  1664000  train kl 6.280 alpha 0.106  flips 16750  4135 tok/s
+update  6525  tokens  1670400  train kl 6.844 alpha 0.099  flips 16564  4144 tok/s
+update  6550  tokens  1676800  train kl 6.694 alpha 0.074  flips 12945  4153 tok/s
+update  6575  tokens  1683200  train kl 6.810 alpha 0.074  flips 14273  4162 tok/s
+update  6600  tokens  1689600  train kl 6.448 alpha 0.083  flips 13800  4171 tok/s
+update  6625  tokens  1696000  train kl 5.808 alpha 0.151  flips 15523  4179 tok/s
+update  6650  tokens  1702400  train kl 6.410 alpha 0.081  flips 13723  4188 tok/s
+pool refill at 1703936 tokens: lambda 0.000 (alpha-bar 0.135), 0 student + 256 teacher sequences, 8.9s
+update  6675  tokens  1708800  train kl 6.453 alpha 0.135  flips 12257  4106 tok/s
+update  6700  tokens  1715200  train kl 6.696 alpha 0.050  flips 15984  4115 tok/s
+update  6725  tokens  1721600  train kl 6.505 alpha 0.102  flips 11476  4124 tok/s
+update  6750  tokens  1728000  train kl 5.517 alpha 0.093  flips 16694  4132 tok/s
+update  6775  tokens  1734400  train kl 6.013 alpha 0.141  flips 12040  4141 tok/s
+update  6800  tokens  1740800  train kl 6.302 alpha 0.108  flips 16156  4149 tok/s
+update  6825  tokens  1747200  train kl 6.721 alpha 0.084  flips 18926  4158 tok/s
+update  6850  tokens  1753600  train kl 5.827 alpha 0.134  flips 11577  4166 tok/s
+update  6875  tokens  1760000  train kl 6.148 alpha 0.125  flips 14845  4175 tok/s
+update  6900  tokens  1766400  train kl 6.667 alpha 0.051  flips 14871  4183 tok/s
+pool refill at 1769472 tokens: lambda 0.000 (alpha-bar 0.051), 0 student + 256 teacher sequences, 8.1s
+update  6925  tokens  1772800  train kl 6.687 alpha 0.087  flips 11719  4112 tok/s
+update  6950  tokens  1779200  train kl 5.744 alpha 0.109  flips 14486  4121 tok/s
+update  6975  tokens  1785600  train kl 6.380 alpha 0.109  flips 11660  4129 tok/s
+update  7000  tokens  1792000  train kl 6.547 alpha 0.070  flips 13436  4138 tok/s
+eval at 1792000 tokens: held-out kl 5.496 alpha 0.177 | on-policy kl 3.294 teacher nll 9.810 alpha 0.299 (0.5s)  lr 2.00e-03
+update  7025  tokens  1798400  train kl 6.948 alpha 0.052  flips 13681  4140 tok/s
+update  7050  tokens  1804800  train kl 6.569 alpha 0.046  flips 14332  4148 tok/s
+update  7075  tokens  1811200  train kl 6.662 alpha 0.132  flips 11313  4156 tok/s
+update  7100  tokens  1817600  train kl 6.029 alpha 0.115  flips 15190  4164 tok/s
+update  7125  tokens  1824000  train kl 5.537 alpha 0.176  flips 9131  4173 tok/s
+update  7150  tokens  1830400  train kl 6.310 alpha 0.106  flips 16933  4181 tok/s
+pool refill at 1835008 tokens: lambda 0.000 (alpha-bar 0.143), 0 student + 256 teacher sequences, 8.5s
+update  7175  tokens  1836800  train kl 6.763 alpha 0.109  flips 8644  4109 tok/s
+update  7200  tokens  1843200  train kl 6.243 alpha 0.086  flips 11789  4117 tok/s
+update  7225  tokens  1849600  train kl 6.384 alpha 0.098  flips 11168  4125 tok/s
+update  7250  tokens  1856000  train kl 6.033 alpha 0.086  flips 13637  4133 tok/s
+update  7275  tokens  1862400  train kl 6.890 alpha 0.102  flips 9881  4141 tok/s
+update  7300  tokens  1868800  train kl 5.886 alpha 0.181  flips 11853  4149 tok/s
+update  7325  tokens  1875200  train kl 6.650 alpha 0.109  flips 13163  4157 tok/s
+update  7350  tokens  1881600  train kl 6.477 alpha 0.095  flips 13782  4165 tok/s
+update  7375  tokens  1888000  train kl 5.919 alpha 0.114  flips 11687  4173 tok/s
+update  7400  tokens  1894400  train kl 6.892 alpha 0.087  flips 12083  4181 tok/s
+pool refill at 1900544 tokens: lambda 0.000 (alpha-bar 0.130), 0 student + 256 teacher sequences, 8.2s
+update  7425  tokens  1900800  train kl 5.761 alpha 0.149  flips 12425  4114 tok/s
+update  7450  tokens  1907200  train kl 6.548 alpha 0.178  flips 12483  4121 tok/s
+update  7475  tokens  1913600  train kl 6.116 alpha 0.122  flips 15245  4129 tok/s
+update  7500  tokens  1920000  train kl 5.518 alpha 0.130  flips 11231  4137 tok/s
+update  7525  tokens  1926400  train kl 6.436 alpha 0.081  flips 12916  4145 tok/s
+update  7550  tokens  1932800  train kl 7.292 alpha 0.063  flips 10845  4152 tok/s
+update  7575  tokens  1939200  train kl 6.964 alpha 0.076  flips 13231  4160 tok/s
+update  7600  tokens  1945600  train kl 6.493 alpha 0.053  flips 13066  4168 tok/s
+update  7625  tokens  1952000  train kl 7.275 alpha 0.050  flips 13238  4176 tok/s
+update  7650  tokens  1958400  train kl 6.218 alpha 0.111  flips 10854  4183 tok/s
+update  7675  tokens  1964800  train kl 6.540 alpha 0.135  flips 10525  4191 tok/s
+pool refill at 1966080 tokens: lambda 0.000 (alpha-bar 0.117), 0 student + 256 teacher sequences, 8.6s
+update  7700  tokens  1971200  train kl 7.099 alpha 0.063  flips 10679  4123 tok/s
+update  7725  tokens  1977600  train kl 6.432 alpha 0.124  flips 13365  4130 tok/s
+update  7750  tokens  1984000  train kl 6.160 alpha 0.058  flips 15071  4138 tok/s
+update  7775  tokens  1990400  train kl 5.628 alpha 0.122  flips 10372  4146 tok/s
+update  7800  tokens  1996800  train kl 7.050 alpha 0.077  flips 11604  4153 tok/s
+update  7825  tokens  2003200  train kl 6.560 alpha 0.124  flips 9153  4161 tok/s
+update  7850  tokens  2009600  train kl 6.134 alpha 0.096  flips 12754  4168 tok/s
+update  7875  tokens  2016000  train kl 6.772 alpha 0.094  flips 11567  4175 tok/s
+update  7900  tokens  2022400  train kl 6.877 alpha 0.083  flips 13299  4183 tok/s
+update  7925  tokens  2028800  train kl 5.392 alpha 0.150  flips 11422  4190 tok/s
+pool refill at 2031616 tokens: lambda 0.000 (alpha-bar 0.105), 0 student + 256 teacher sequences, 8.1s
+update  7950  tokens  2035200  train kl 7.540 alpha 0.062  flips 9497  4128 tok/s
+update  7975  tokens  2041600  train kl 6.344 alpha 0.087  flips 13195  4135 tok/s
+update  8000  tokens  2048000  train kl 6.328 alpha 0.095  flips 9911  4143 tok/s
+eval at 2048000 tokens: held-out kl 5.682 alpha 0.145 | on-policy kl 3.283 teacher nll 11.195 alpha 0.282 (0.5s)  lr 2.00e-03
+pool generation (teacher decode, student sampling, scoring) 33.7 ms per sequence
+throughput excluding text generation: 9448 tok/s per member, 9448 member-tok/s
