@@ -256,3 +256,15 @@ About 1.5 hours is deliberately unallocated.
     both seeds.
   - Implication for the ANE: master-weight-free TTF costs ~0.25 nats at long budgets. Options: switch from TTF
     to master weights later in training, use low-precision master weights, or retune θ/τ for long runs.
+- 2026-11-24 12:00. **Fused teacher scoring** (e1af7bb plus a fix). Training targets are now the decode-step
+  log-probs, so the separate scoring pass (24.6 ms/seq) is gone.
+  - **Fix:** the first version stacked one [pool, T, V] array, which passes 2^31 elements at pool 256 and gave
+    garbage targets (pool 128 sat exactly on the edge). Targets now stay as per-step [pool, V] bf16 arrays, and
+    one sequence's [T, V] is gathered when it's used. Default pool 256.
+  - **Equivalence** against the scoring pass (agent, pool 128): mean KL ~1e-4, max |Δ log p| 0.3–0.7 in tail
+    tokens (bf16 and KV-cache differences).
+  - **Check** (P=1, 256k tokens, pool 256): ane-train 9.169 → 6.019 → 5.081; float-train --ternary 9.170 →
+    5.919 → 5.053.
+  - **Speed:** ane-train 6268 tok/s excluding generation, generation 34.5 ms/seq, ~3.4k tok/s end to end (was
+    ~2.8k). float-train --ternary 9444 tok/s, ~4.2k end to end. Teacher decoding now dominates, which on-policy
+    data would remove.

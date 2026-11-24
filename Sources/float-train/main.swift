@@ -126,8 +126,8 @@ func klLoss(_ p: [MLXArray], _ tokens: MLXArray, _ target: MLXArray) -> MLXArray
 
 // Teacher and data, as ane-train.
 let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
-@MainActor func generate(_ count: Int, keep: Bool = false) throws -> (tokens: [[Int32]], targets: MLXArray?) {
-    // keep: also store the decode-step teacher log-probs [count, T, V] (bf16) as KL targets; position t predicts token t+1,
+@MainActor func generate(_ count: Int, keep: Bool = false) throws -> (tokens: [[Int32]], steps: [MLXArray]) {
+    // keep: also keep the decode-step teacher log-probs as KL targets, one [count, V] bf16 array per step; position t predicts token t+1,
     // so the last position needs one extra decode step on the final token (its sample is discarded).
     var x = MLXRandom.randInt(0 ..< V, [count, 1]).asType(.int32), rows = [x], lps: [MLXArray] = []
     let cache = try teacher.newCache(parameters: nil)
@@ -139,7 +139,7 @@ let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
         eval(x); rows.append(x)
     }
     let all = concatenated(rows, axis: 1)
-    return ((0 ..< count).map { all[$0].asArray(Int32.self) }, keep ? stacked(lps, axis: 1) : nil)
+    return ((0 ..< count).map { all[$0].asArray(Int32.self) }, lps)
 }
 @MainActor func teacherLogProbs(_ tokens: MLXArray) -> MLXArray {
     let t = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(t); return t
@@ -150,8 +150,8 @@ let evalSet = evalRaw.map { MLXArray($0) }
 let evalTargets = evalSet.map(teacherLogProbs)
 print("eval set checksum: \(evalRaw.flatMap { $0 }.reduce(0) { ($0 &* 31 &+ Int($1)) & 0xFFFF_FFFF }) (\(evalCount) sequences)")
 MLXRandom.seed(UInt64(seed))
-var pool: [([Int32], MLXArray)] = []
-let poolSize = Int(option("pool") ?? "128")!  // 256 overflows MLX 32-bit indexing of the [pool, T, V] stack
+var pool: [([Int32], Int)] = [], poolSteps: [MLXArray] = []  // (tokens, index into each step's [pool, V] targets)
+let poolSize = Int(option("pool") ?? "256")!  // targets stay per step: one [pool, T, V] array would pass 2^31 elements (MLX indexing) at 128+
 
 var params = initParams(ternary: ternary)
 eval(params)
@@ -205,8 +205,8 @@ let warmup = max(1, updates / 20)
 var tokensSeen = 0, nextRound = roundTokens, recent = 0.0, recentCount = 0, flipsRecent: Float = 0, generation = 0.0, working = 0.0
 report(evaluate(), tokens: 0)
 for step in 1 ... updates {
-    if pool.isEmpty { let t0 = Date(); let g = try generate(poolSize, keep: true); pool = (0 ..< poolSize).map { (g.tokens[$0], g.targets![$0]) }; generation += Date().timeIntervalSince(t0) }
-    let (poolTokens, poolTarget) = pool.removeLast(); let tokens = MLXArray(poolTokens), target = poolTarget.asType(.float32)
+    if pool.isEmpty { let t0 = Date(); let g = try generate(poolSize, keep: true); poolSteps = g.steps; pool = (0 ..< poolSize).map { (g.tokens[$0], $0) }; generation += Date().timeIntervalSince(t0) }
+    let (poolTokens, i) = pool.removeLast(); let tokens = MLXArray(poolTokens), target = stacked(poolSteps.map { $0[i] }).asType(.float32)
     tokensSeen += T
     let t0 = Date()
     let (loss, grads) = lossGrad(params + tritState.map(\.value) + [tokens, target])
