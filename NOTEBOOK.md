@@ -225,3 +225,7 @@ About 1.5 hours is deliberately unallocated.
   - The ANE trunk is 9.9 of 60 ms per sequence at P=1; the GPU-side teacher scoring, update, head and
     accumulation dominate.
   - Phase 4 done: MORNING.md written.
+- 2026-11-24 06:30. **PBT settings at P=1** (`--bound`, `--hyper 2.27e-3,15.4,2947,0.83`, seeds 0–2):
+  - Results 2.047 / 2.156 / 2.253 (mean 2.152), against defaults 2.160 / 2.243 / 2.250 (mean 2.218).
+  - Paired differences: −0.11, −0.09, +0.00. Suggestive; selected on the same eval set.
+  - End of the overnight session.

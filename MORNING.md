@@ -88,8 +88,10 @@ throughput measurements. A clean throughput measurement ran at the end (What's n
    (11.0), head (7.9) and accumulation (6.9), all on the GPU. Text generation adds 30.5 ms per sequence on top.
    Cheap wins: fuse the update and accumulation kernels, batch teacher generation, and use P>1 to amortise the
    teacher.
-4. **PBT at longer budgets.** The 8.2M-token runs used fixed default settings. PBT drifted to τ 3–4k, which is
-   worth adopting as the default if it holds.
+4. **PBT settings.** At P=1, PBT-8's winning settings (lr 2.27e-3, θ 15.4, τ 2947, ρ× 0.83) gave mean 2.152 against 2.218
+   for defaults over 3 seeds, with paired differences of −0.11, −0.09 and +0.00. That is suggestive, but PBT
+   selected them on the same eval set. Next: a larger held-out set (32+ sequences) for selection, a separate
+   one for reporting, and PBT over 8.2M tokens.
 5. **Back to the main goal.** Use the now-sound ANE student pipeline for dataset-free transfer into larger
    ternary students, or return to the quantised-repair track (the 3-bit LFM2 repair, 56.6 → 49.8 perplexity).
 
