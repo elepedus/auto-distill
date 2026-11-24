@@ -92,7 +92,12 @@ public func prescaleNames(attention: Bool, heads: Int) -> [(name: String, width:
         + (attention ? [("dg_q", heads), ("dg_k", heads)] : (0 ..< 3).map { ("dk\($0)", 1) })
 }
 /// With `prescale`, each of those gradient outputs is multiplied by its own slice of the runtime input `f` (default 1), applied to the upstream gradient before any reduction.
-public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true, prescale: Bool = false) throws
+/// With `colscale` (forward only), each linear first multiplies its input by a per-input-channel scale, all packed in the runtime
+/// input `cs` [1, P, 1, sum of widths]: (x ⊙ cs) @ trits ⊙ s. Names and widths in `colscaleNames`.
+public func colscaleNames(attention: Bool, dim: Int, ff: Int) -> [(name: String, width: Int)] {
+    (attention ? ["q", "k", "v", "o"] : ["b", "c", "x", "o"]).map { ($0, dim) } + [("w1", dim), ("w3", dim), ("w2", ff)]
+}
+public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false, diagnostics: Bool = true, prescale: Bool = false, colscale: Bool = false) throws
     -> (Program, constants: [String: Tensor]) {
     let g = MILText(), T = s.tokens, D = s.dim, H = s.heads, hd = s.headDim, P = s.population, PH = P * H
     func ones(_ n: Int) -> [Float16] { .init(repeating: 1, count: n) }
@@ -109,6 +114,13 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
             factor[name] = width == 1 ? part : g.reshape(part, [1, PH, 1, 1])  // dg_q, dg_k: one factor per member and head
             offset += width
         }
+    }
+    var colSlice = [String: V]()
+    if colscale && !backward {
+        let names = colscaleNames(attention: attention, dim: D, ff: s.ff), total = names.map(\.width).reduce(0, +)
+        let packed = g.input("cs", [1, P, 1, total])
+        var offset = 0
+        for (name, width) in names { colSlice[name] = g.slice(packed, begin: [0, 0, 0, offset], size: [1, P, 1, width]); offset += width }
     }
     func scaled(_ x: V, _ f: V?) -> V { f.map { g.mul(x, $0) } ?? x }
     func emit(_ x: V, _ name: String) { outputs.append(g.output(x, name)) }
@@ -133,7 +145,7 @@ public func layerProgram(_ s: LFM2Shape, attention: Bool, backward: Bool = false
     struct Lin { let name: String; let x, w, s, pre, y: V }
     func linear(_ x: V, _ name: String, out: Int) -> Lin {
         let w = g.input("w_\(name)", [1, P, out, x.shape[3]]), scale = g.input("s_\(name)", [1, P, 1, out])
-        let pre = g.matmul(x, w, transposeY: true)  // trits in MLX's [out, in] layout
+        let pre = g.matmul(colSlice[name].map { g.mul(x, $0) } ?? x, w, transposeY: true)  // trits in MLX's [out, in] layout
         return Lin(name: name, x: x, w: w, s: scale, pre: pre, y: g.mul(pre, scale))
     }
     func linearBack(_ l: Lin, _ gy: V) -> V {  // emits gp_ and ds_, returns dL/dx (an exact ternary matmul)

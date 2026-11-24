@@ -399,3 +399,41 @@ and inference co-optimised for this Mac.
 **Checkpoint format** (A1 and A3 agree): a directory holding the base `config.json` plus `model.safetensors`.
 For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) and optionally `<path>.colscale`
 (fp32 [K]); every other parameter under its mlx-swift-lm name.
+- 2026-11-24 22:25. **A3: ANE inference of the ternary 350M** (`ane-infer`, `results/ane-infer-2026-11-24.md`).
+  - **Parity with the GPU ternary model:** prefill KL 0.0002, argmax 98.9%; decode argmax 100%; no overflow.
+  - **The ANE is slower than the GPU on the M2 Max:**
+
+    | path | prefill tok/s | decode tok/s |
+    |---|---|---|
+    | ANE | 3.9k (3.2–3.7 ms per layer) | ~30 |
+    | GPU bf16 | 10.8k | 157–223 |
+
+    Decode looks dominated by per-program dispatch, 16 programs per token; fusing layers is the fix.
+  - **Decision: co-optimised inference on this Mac = the GPU with packed weights.** Decode is bandwidth-bound, and
+    ternary is exactly MLX 2-bit affine (q = t+1, scale = s, bias = −s), so ~8× fewer weight bytes than bf16.
+    Agent B4 is building an exact export and a benchmark.
+  - **Colscales** are tied per shared input (q/k/v; w1/w3), so they fold into the norm gains. out_proj/o_proj/w2
+    colscales fold into the C/v/w3 rows. Zero inference overhead.
+  - **The ANE's role on this machine:** concurrency (student or writer beside the GPU teacher) and efficiency, not
+    peak speed.
+- 2026-11-24 22:40. **B4: exact 2-bit GPU export** (`ternary-export`, `results/gpu-ternary-infer-2026-11-24.md`).
+  - **Exactness:** MLX's dequantized() of all 92 linears equals trits·bf16(scale), with 0 mismatches.
+  - **Colscale folding is exact.** Untied colscales abort.
+  - **Parity:** KL 0.004–0.005 per token against fp32 TernaryLinear (bf16 floor 0.002–0.004).
+  - **Quiet benchmark:**
+
+    | model | prefill B1 / B8 tok/s | decode tok/s | size |
+    |---|---|---|---|
+    | bf16 | 10.4k / 13.0k | 262 | 709 MB |
+    | ternary 2-bit | 4.6k / 10.1k | **441** (1.7×) | 224 MB |
+    | MLX 4-bit | 8.5k / 9.6k | 397 | 200 MB |
+
+    A 4-bit embedding costs KL 0.47, so the embedding stays bf16; it is most of the 224 MB.
+  - **Plan adjustment.** The 8.2M baseline runs at only ~413 tok/s while agents share the GPU, so it can't finish
+    before Phase C. At D1 it gets stopped wherever it is, and the final run gets the GPU alone.
+- 2026-11-24 23:00. **A1 merged.**
+  - **Checkpoints:** `--save DIR --save-every N --resume DIR`. A resume is bit-continuous on the eval.
+  - **Schedule:** `--schedule wsd --decay-frac F`.
+  - **Accumulators:** `--acc int8`, with the residual init quantised. At 128k tokens: KL 2.81 vs 2.77 for fp32.
+  - **Profiling:** `--profile`. Per update: generation ~40% of wall time, then forward+backward, then TTF+Adam. No
+    throughput change was committed: bf16 trit copies gave no gain. Contended numbers are unreliable.
