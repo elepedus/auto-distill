@@ -382,3 +382,20 @@ About 1.5 hours is deliberately unallocated.
   - **Throughput:** TTF 1075 tok/s on the GPU at 350M. Peak memory 23.5 GB, mostly the 256-sequence target pool.
   - **Wikitext text** for perplexity is at /tmp/wikitext2-test-join.txt. The "\n\n"-joined variant gives teacher
     perplexity 33.13; the join variant matches the known 32.37.
+
+## Night 2 plan, 2026-11-24 22:00 → 08:00 GMT
+
+**Goal (user):** the best possible recovery of LFM2-350M in a ternarised, device-aligned architecture, with training
+and inference co-optimised for this Mac.
+
+| phase | GMT | work |
+|---|---|---|
+| A | 22:00–23:15 | Three subagents in worktrees. A1: ternarise infrastructure and speed (int8 accumulators, WSD schedule, checkpoint save/resume, throughput). A2: recipe features (two-sided row×column scales, layerwise reconstruction init). A3: ANE inference of the ternary 350M (prefill benchmark and parity, decode stretch). Meanwhile: an 8.2M-token baseline with today's recipe (does the curve saturate?). |
+| B | 23:15–01:30 | 1M-token screens: float lr, two-sided scales, layerwise init (cost counted), WSD vs cosine, int8 accumulator, keep-fp first/last (mixed-precision track). |
+| D1 | 01:30 | Choose the recipe. |
+| C | 01:30–06:45 | One long final run, checkpointed every ~2M tokens, WSD schedule so it can end on time. |
+| D | 06:45–08:00 | Final perplexity and KL; ANE inference benchmark of the final model; write-up; MORNING.md; push. |
+
+**Checkpoint format** (A1 and A3 agree): a directory holding the base `config.json` plus `model.safetensors`.
+For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) and optionally `<path>.colscale`
+(fp32 [K]); every other parameter under its mlx-swift-lm name.
