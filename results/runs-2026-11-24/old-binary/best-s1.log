@@ -1,0 +1,377 @@
+population 1: compiled 8 ANE programs in 3.6s; 3407872 ternary weights per member; 8000 updates of 256 tokens
+eval at 0 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  9.695  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update     1  tokens      256  train kl best 8.341 median 8.341  flips median 0  scale 1024  15 tok/s per member
+    gzero 0.00..0.00  gmax 0.39..0.39  dxzero 0.00..0.00
+update    50  tokens    12800  train kl best 9.677 median 9.677  flips median 0  scale 1024  628 tok/s per member
+    gzero 0.00..0.00  gmax 0.408..0.408  dxzero 0.00..0.00
+update   100  tokens    25600  train kl best 9.903 median 9.903  flips median 9  scale 1024  1099 tok/s per member
+    gzero 0.01..0.01  gmax 0.217..0.217  dxzero 0.00..0.00
+update   150  tokens    38400  train kl best 9.693 median 9.693  flips median 13  scale 1024  1463 tok/s per member
+    gzero 0.00..0.00  gmax 0.22..0.22  dxzero 0.00..0.00
+update   200  tokens    51200  train kl best 9.467 median 9.467  flips median 825  scale 2048  1756 tok/s per member
+    gzero 0.00..0.00  gmax 0.812..0.812  dxzero 0.00..0.00
+update   250  tokens    64000  train kl best 8.737 median 8.737  flips median 3056  scale 2048  1995 tok/s per member
+    gzero 0.01..0.01  gmax 2.12..2.12  dxzero 0.00..0.00
+update   300  tokens    76800  train kl best 8.501 median 8.501  flips median 2941  scale 2048  1791 tok/s per member
+    gzero 0.00..0.00  gmax 0.87..0.87  dxzero 0.00..0.00
+update 328: gradient overflow, loss scale -> 1024.0
+update 329: gradient overflow, loss scale -> 512.0
+update   350  tokens    89600  train kl best 8.646 median 8.646  flips median 0  scale 512  1947 tok/s per member
+    gzero 0.83..0.83  gmax 5.84e-06..5.84e-06  dxzero 0.00..0.00
+update   400  tokens   102400  train kl best 9.380 median 9.380  flips median 2  scale 512  2084 tok/s per member
+    gzero 0.83..0.83  gmax 6.14e-06..6.14e-06  dxzero 0.00..0.00
+update   450  tokens   115200  train kl best 9.993 median 9.993  flips median 241  scale 512  2203 tok/s per member
+    gzero 0.82..0.82  gmax 7.21e-06..7.21e-06  dxzero 0.00..0.00
+update 453: gradient overflow, loss scale -> 256.0
+update   500  tokens   128000  train kl best 10.089 median 10.089  flips median 638  scale 256  2309 tok/s per member
+    gzero 0.83..0.83  gmax 3.04e-06..3.04e-06  dxzero 0.00..0.00
+update   550  tokens   140800  train kl best 10.079 median 10.079  flips median 1009  scale 256  2131 tok/s per member
+    gzero 0.83..0.83  gmax 4.65e-06..4.65e-06  dxzero 0.01..0.01
+update   600  tokens   153600  train kl best 9.951 median 9.951  flips median 5507  scale 256  2225 tok/s per member
+    gzero 0.83..0.83  gmax 4.77e-06..4.77e-06  dxzero 0.00..0.00
+update   650  tokens   166400  train kl best 9.627 median 9.627  flips median 2900  scale 256  2308 tok/s per member
+    gzero 0.84..0.84  gmax 4.65e-06..4.65e-06  dxzero 0.01..0.01
+update 654: gradient overflow, loss scale -> 256.0
+update 655: gradient overflow, loss scale -> 128.0
+update   700  tokens   179200  train kl best 9.628 median 9.628  flips median 1339  scale 128  2389 tok/s per member
+    gzero 0.85..0.85  gmax 1.13e-06..1.13e-06  dxzero 0.01..0.01
+update 714: gradient overflow, loss scale -> 64.0
+update   750  tokens   192000  train kl best 9.490 median 9.490  flips median 511  scale 64  2462 tok/s per member
+    gzero 0.94..0.94  gmax 1.19e-06..1.19e-06  dxzero 0.06..0.06
+update   800  tokens   204800  train kl best 9.507 median 9.507  flips median 4179  scale 64  2309 tok/s per member
+    gzero 0.85..0.85  gmax 8.34e-07..8.34e-07  dxzero 0.01..0.01
+update   850  tokens   217600  train kl best 9.257 median 9.257  flips median 1496  scale 64  2370 tok/s per member
+    gzero 0.87..0.87  gmax 1.01e-06..1.01e-06  dxzero 0.02..0.02
+update   900  tokens   230400  train kl best 9.530 median 9.530  flips median 2802  scale 64  2427 tok/s per member
+    gzero 0.86..0.86  gmax 1.07e-06..1.07e-06  dxzero 0.01..0.01
+update   950  tokens   243200  train kl best 9.491 median 9.491  flips median 2188  scale 128  2474 tok/s per member
+    gzero 0.83..0.83  gmax 2.62e-06..2.62e-06  dxzero 0.00..0.00
+update  1000  tokens   256000  train kl best 9.273 median 9.273  flips median 1093  scale 128  2499 tok/s per member
+    gzero 0.84..0.84  gmax 3.34e-06..3.34e-06  dxzero 0.00..0.00
+eval at 256000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  9.349  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update  1050  tokens   268800  train kl best 9.054 median 9.054  flips median 330  scale 128  2293 tok/s per member
+    gzero 0.85..0.85  gmax 1.97e-06..1.97e-06  dxzero 0.01..0.01
+update  1100  tokens   281600  train kl best 8.901 median 8.901  flips median 1009  scale 128  2340 tok/s per member
+    gzero 0.84..0.84  gmax 3.04e-06..3.04e-06  dxzero 0.01..0.01
+update 1129: gradient overflow, loss scale -> 128.0
+update  1150  tokens   294400  train kl best 8.929 median 8.929  flips median 1316  scale 128  2367 tok/s per member
+    gzero 0.83..0.83  gmax 2.86e-06..2.86e-06  dxzero 0.00..0.00
+update  1200  tokens   307200  train kl best 9.064 median 9.064  flips median 694  scale 128  2383 tok/s per member
+    gzero 0.84..0.84  gmax 2.74e-06..2.74e-06  dxzero 0.00..0.00
+update  1250  tokens   320000  train kl best 9.059 median 9.059  flips median 632  scale 128  2398 tok/s per member
+    gzero 0.84..0.84  gmax 2.21e-06..2.21e-06  dxzero 0.01..0.01
+update 1292: gradient overflow, loss scale -> 64.0
+update  1300  tokens   332800  train kl best 8.955 median 8.955  flips median 599  scale 64  2271 tok/s per member
+    gzero 0.85..0.85  gmax 2.62e-06..2.62e-06  dxzero 0.01..0.01
+update  1350  tokens   345600  train kl best 9.351 median 9.351  flips median 556  scale 64  2291 tok/s per member
+    gzero 0.85..0.85  gmax 2.15e-06..2.15e-06  dxzero 0.01..0.01
+update  1400  tokens   358400  train kl best 9.266 median 9.266  flips median 609  scale 64  2313 tok/s per member
+    gzero 0.84..0.84  gmax 2.98e-06..2.98e-06  dxzero 0.01..0.01
+update  1450  tokens   371200  train kl best 9.199 median 9.199  flips median 771  scale 64  2343 tok/s per member
+    gzero 0.84..0.84  gmax 3.58e-06..3.58e-06  dxzero 0.01..0.01
+update  1500  tokens   384000  train kl best 8.481 median 8.481  flips median 4979  scale 128  2354 tok/s per member
+    gzero 0.62..0.62  gmax 1.06e-05..1.06e-05  dxzero 0.00..0.00
+update  1550  tokens   396800  train kl best 7.892 median 7.892  flips median 138  scale 128  2239 tok/s per member
+    gzero 0.78..0.78  gmax 0.000222..0.000222  dxzero 0.00..0.00
+update  1600  tokens   409600  train kl best 7.743 median 7.743  flips median 142  scale 128  2270 tok/s per member
+    gzero 0.58..0.58  gmax 0.000126..0.000126  dxzero 0.00..0.00
+update 1602: gradient overflow, loss scale -> 64.0
+update  1650  tokens   422400  train kl best 8.174 median 8.174  flips median 531  scale 64  2300 tok/s per member
+    gzero 0.83..0.83  gmax 4.91e-05..4.91e-05  dxzero 0.00..0.00
+update  1700  tokens   435200  train kl best 8.010 median 8.010  flips median 842  scale 64  2329 tok/s per member
+    gzero 0.69..0.69  gmax 0.000284..0.000284  dxzero 0.00..0.00
+update  1750  tokens   448000  train kl best 8.136 median 8.136  flips median 126  scale 64  2356 tok/s per member
+    gzero 0.76..0.76  gmax 0.000118..0.000118  dxzero 0.00..0.00
+update  1800  tokens   460800  train kl best 8.017 median 8.017  flips median 2261  scale 64  2290 tok/s per member
+    gzero 0.67..0.67  gmax 0.000152..0.000152  dxzero 0.00..0.00
+update 1807: gradient overflow, loss scale -> 64.0
+update  1850  tokens   473600  train kl best 8.116 median 8.116  flips median 912  scale 64  2310 tok/s per member
+    gzero 0.75..0.75  gmax 0.000421..0.000421  dxzero 0.00..0.00
+update 1882: gradient overflow, loss scale -> 32.0
+update  1900  tokens   486400  train kl best 7.763 median 7.763  flips median 463  scale 32  2323 tok/s per member
+    gzero 0.85..0.85  gmax 7.27e-06..7.27e-06  dxzero 0.01..0.01
+update  1950  tokens   499200  train kl best 7.991 median 7.991  flips median 57  scale 32  2328 tok/s per member
+    gzero 0.85..0.85  gmax 2.28e-05..2.28e-05  dxzero 0.01..0.01
+update  2000  tokens   512000  train kl best 7.488 median 7.488  flips median 268  scale 32  2353 tok/s per member
+    gzero 0.86..0.86  gmax 6.14e-06..6.14e-06  dxzero 0.03..0.03
+eval at 512000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  7.321  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update  2050  tokens   524800  train kl best 7.844 median 7.844  flips median 754  scale 32  2249 tok/s per member
+    gzero 0.80..0.80  gmax 0.000132..0.000132  dxzero 0.01..0.01
+update 2086: gradient overflow, loss scale -> 32.0
+update  2100  tokens   537600  train kl best 7.784 median 7.784  flips median 10664  scale 32  2263 tok/s per member
+    gzero 0.84..0.84  gmax 8.88e-06..8.88e-06  dxzero 0.00..0.00
+update  2150  tokens   550400  train kl best 7.497 median 7.497  flips median 525  scale 32  2285 tok/s per member
+    gzero 0.83..0.83  gmax 0.000178..0.000178  dxzero 0.01..0.01
+update  2200  tokens   563200  train kl best 7.546 median 7.546  flips median 144  scale 32  2303 tok/s per member
+    gzero 0.82..0.82  gmax 0.0002..0.0002  dxzero 0.01..0.01
+update  2250  tokens   576000  train kl best 7.266 median 7.266  flips median 408  scale 32  2310 tok/s per member
+    gzero 0.81..0.81  gmax 0.000251..0.000251  dxzero 0.01..0.01
+update 2277: gradient overflow, loss scale -> 16.0
+update  2300  tokens   588800  train kl best 7.334 median 7.334  flips median 377  scale 16  2319 tok/s per member
+    gzero 0.86..0.86  gmax 6.62e-06..6.62e-06  dxzero 0.02..0.02
+update  2350  tokens   601600  train kl best 7.499 median 7.499  flips median 253  scale 16  2253 tok/s per member
+    gzero 0.88..0.88  gmax 3.16e-06..3.16e-06  dxzero 0.03..0.03
+update  2400  tokens   614400  train kl best 6.912 median 6.912  flips median 720  scale 16  2262 tok/s per member
+    gzero 0.87..0.87  gmax 2.34e-05..2.34e-05  dxzero 0.02..0.02
+update  2450  tokens   627200  train kl best 7.105 median 7.105  flips median 111  scale 16  2273 tok/s per member
+    gzero 0.88..0.88  gmax 8.52e-05..8.52e-05  dxzero 0.02..0.02
+update  2500  tokens   640000  train kl best 7.722 median 7.722  flips median 113  scale 32  2294 tok/s per member
+    gzero 0.80..0.80  gmax 0.000113..0.000113  dxzero 0.01..0.01
+update  2550  tokens   652800  train kl best 7.411 median 7.411  flips median 7729  scale 32  2313 tok/s per member
+    gzero 0.73..0.73  gmax 0.000196..0.000196  dxzero 0.00..0.00
+update 2569: gradient overflow, loss scale -> 16.0
+update  2600  tokens   665600  train kl best 7.441 median 7.441  flips median 748  scale 16  2208 tok/s per member
+    gzero 0.81..0.81  gmax 0.000119..0.000119  dxzero 0.01..0.01
+update  2650  tokens   678400  train kl best 7.148 median 7.148  flips median 1366  scale 16  2205 tok/s per member
+    gzero 0.82..0.82  gmax 0.000384..0.000384  dxzero 0.01..0.01
+update  2700  tokens   691200  train kl best 7.312 median 7.312  flips median 414  scale 16  2214 tok/s per member
+    gzero 0.85..0.85  gmax 0.000171..0.000171  dxzero 0.01..0.01
+update  2750  tokens   704000  train kl best 7.381 median 7.381  flips median 529  scale 16  2225 tok/s per member
+    gzero 0.85..0.85  gmax 7.65e-05..7.65e-05  dxzero 0.01..0.01
+update 2782: gradient overflow, loss scale -> 16.0
+update  2800  tokens   716800  train kl best 7.697 median 7.697  flips median 713  scale 16  2236 tok/s per member
+    gzero 0.82..0.82  gmax 9.14e-05..9.14e-05  dxzero 0.01..0.01
+update  2850  tokens   729600  train kl best 7.399 median 7.399  flips median 375  scale 16  2150 tok/s per member
+    gzero 0.86..0.86  gmax 9.84e-05..9.84e-05  dxzero 0.02..0.02
+update  2900  tokens   742400  train kl best 7.716 median 7.716  flips median 392  scale 16  2134 tok/s per member
+    gzero 0.87..0.87  gmax 0.000103..0.000103  dxzero 0.02..0.02
+update  2950  tokens   755200  train kl best 7.406 median 7.406  flips median 465  scale 16  2128 tok/s per member
+    gzero 0.86..0.86  gmax 5.13e-05..5.13e-05  dxzero 0.01..0.01
+update  3000  tokens   768000  train kl best 7.792 median 7.792  flips median 16685  scale 32  2137 tok/s per member
+    gzero 0.52..0.52  gmax 0.00159..0.00159  dxzero 0.00..0.00
+eval at 768000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  7.828  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update 3007: gradient overflow, loss scale -> 16.0
+update  3050  tokens   780800  train kl best 7.724 median 7.724  flips median 947  scale 16  2144 tok/s per member
+    gzero 0.86..0.86  gmax 1.22e-05..1.22e-05  dxzero 0.01..0.01
+update  3100  tokens   793600  train kl best 7.330 median 7.330  flips median 509  scale 16  2048 tok/s per member
+    gzero 0.86..0.86  gmax 4.08e-05..4.08e-05  dxzero 0.01..0.01
+update  3150  tokens   806400  train kl best 7.539 median 7.539  flips median 872  scale 16  2053 tok/s per member
+    gzero 0.76..0.76  gmax 0.000195..0.000195  dxzero 0.01..0.01
+update  3200  tokens   819200  train kl best 7.496 median 7.496  flips median 1219  scale 16  2057 tok/s per member
+    gzero 0.70..0.70  gmax 0.00011..0.00011  dxzero 0.00..0.00
+update 3220: gradient overflow, loss scale -> 16.0
+update  3250  tokens   832000  train kl best 7.642 median 7.642  flips median 99  scale 16  2053 tok/s per member
+    gzero 0.83..0.83  gmax 0.000283..0.000283  dxzero 0.02..0.02
+update 3280: gradient overflow, loss scale -> 8.0
+update  3300  tokens   844800  train kl best 7.330 median 7.330  flips median 404  scale 8  2051 tok/s per member
+    gzero 0.88..0.88  gmax 0.00011..0.00011  dxzero 0.02..0.02
+update  3350  tokens   857600  train kl best 7.542 median 7.542  flips median 1376  scale 8  1980 tok/s per member
+    gzero 0.88..0.88  gmax 5.9e-06..5.9e-06  dxzero 0.02..0.02
+update  3400  tokens   870400  train kl best 7.215 median 7.215  flips median 170  scale 8  1972 tok/s per member
+    gzero 0.89..0.89  gmax 6.57e-05..6.57e-05  dxzero 0.03..0.03
+update  3450  tokens   883200  train kl best 7.980 median 7.980  flips median 340  scale 8  1979 tok/s per member
+    gzero 0.87..0.87  gmax 0.000121..0.000121  dxzero 0.02..0.02
+update  3500  tokens   896000  train kl best 7.179 median 7.179  flips median 599  scale 16  1989 tok/s per member
+    gzero 0.86..0.86  gmax 7.39e-06..7.39e-06  dxzero 0.01..0.01
+update  3550  tokens   908800  train kl best 7.369 median 7.369  flips median 252  scale 16  1997 tok/s per member
+    gzero 0.82..0.82  gmax 7.74e-05..7.74e-05  dxzero 0.02..0.02
+update  3600  tokens   921600  train kl best 6.880 median 6.880  flips median 169  scale 16  1948 tok/s per member
+    gzero 0.85..0.85  gmax 0.000227..0.000227  dxzero 0.01..0.01
+update  3650  tokens   934400  train kl best 7.545 median 7.545  flips median 249  scale 16  1962 tok/s per member
+    gzero 0.87..0.87  gmax 5.32e-05..5.32e-05  dxzero 0.02..0.02
+update  3700  tokens   947200  train kl best 6.340 median 6.340  flips median 6424  scale 32  1974 tok/s per member
+    gzero 0.73..0.73  gmax 0.000714..0.000714  dxzero 0.01..0.01
+update  3750  tokens   960000  train kl best 7.629 median 7.629  flips median 107  scale 32  1974 tok/s per member
+    gzero 0.80..0.80  gmax 0.000157..0.000157  dxzero 0.02..0.02
+update  3800  tokens   972800  train kl best 7.661 median 7.661  flips median 1269  scale 32  1962 tok/s per member
+    gzero 0.81..0.81  gmax 0.00037..0.00037  dxzero 0.01..0.01
+update  3850  tokens   985600  train kl best 7.662 median 7.662  flips median 323  scale 32  1915 tok/s per member
+    gzero 0.82..0.82  gmax 0.00019..0.00019  dxzero 0.02..0.02
+update  3900  tokens   998400  train kl best 7.008 median 7.008  flips median 787  scale 64  1914 tok/s per member
+    gzero 0.66..0.66  gmax 0.00168..0.00168  dxzero 0.01..0.01
+update  3950  tokens  1011200  train kl best 7.385 median 7.385  flips median 670  scale 64  1917 tok/s per member
+    gzero 0.50..0.50  gmax 0.0014..0.0014  dxzero 0.00..0.00
+update  4000  tokens  1024000  train kl best 7.765 median 7.765  flips median 397  scale 64  1924 tok/s per member
+    gzero 0.83..0.83  gmax 0.000285..0.000285  dxzero 0.02..0.02
+eval at 1024000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  6.838  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update  4050  tokens  1036800  train kl best 6.717 median 6.717  flips median 1714  scale 64  1924 tok/s per member
+    gzero 0.72..0.72  gmax 0.00156..0.00156  dxzero 0.01..0.01
+update  4100  tokens  1049600  train kl best 7.361 median 7.361  flips median 798  scale 128  1867 tok/s per member
+    gzero 0.67..0.67  gmax 0.00286..0.00286  dxzero 0.01..0.01
+update  4150  tokens  1062400  train kl best 7.212 median 7.212  flips median 405  scale 128  1874 tok/s per member
+    gzero 0.71..0.71  gmax 0.000668..0.000668  dxzero 0.00..0.00
+update 4186: gradient overflow, loss scale -> 64.0
+update  4200  tokens  1075200  train kl best 7.195 median 7.195  flips median 181  scale 64  1874 tok/s per member
+    gzero 0.76..0.76  gmax 0.000388..0.000388  dxzero 0.01..0.01
+update  4250  tokens  1088000  train kl best 7.010 median 7.010  flips median 1295  scale 64  1870 tok/s per member
+    gzero 0.72..0.72  gmax 0.000683..0.000683  dxzero 0.01..0.01
+update  4300  tokens  1100800  train kl best 7.256 median 7.256  flips median 894  scale 64  1874 tok/s per member
+    gzero 0.85..0.85  gmax 0.000359..0.000359  dxzero 0.00..0.00
+update  4350  tokens  1113600  train kl best 7.125 median 7.125  flips median 161  scale 64  1879 tok/s per member
+    gzero 0.83..0.83  gmax 0.000501..0.000501  dxzero 0.02..0.02
+update 4389: gradient overflow, loss scale -> 64.0
+update  4400  tokens  1126400  train kl best 6.935 median 6.935  flips median 230  scale 64  1833 tok/s per member
+    gzero 0.87..0.87  gmax 5.38e-05..5.38e-05  dxzero 0.01..0.01
+update  4450  tokens  1139200  train kl best 7.181 median 7.181  flips median 478  scale 64  1841 tok/s per member
+    gzero 0.85..0.85  gmax 0.00025..0.00025  dxzero 0.00..0.00
+update  4500  tokens  1152000  train kl best 7.405 median 7.405  flips median 345  scale 64  1848 tok/s per member
+    gzero 0.83..0.83  gmax 0.000283..0.000283  dxzero 0.01..0.01
+update  4550  tokens  1164800  train kl best 7.494 median 7.494  flips median 195  scale 64  1855 tok/s per member
+    gzero 0.80..0.80  gmax 0.000925..0.000925  dxzero 0.02..0.02
+update 4595: gradient overflow, loss scale -> 64.0
+update  4600  tokens  1177600  train kl best 7.272 median 7.272  flips median 125  scale 64  1862 tok/s per member
+    gzero 0.80..0.80  gmax 0.000534..0.000534  dxzero 0.02..0.02
+update  4650  tokens  1190400  train kl best 6.840 median 6.840  flips median 96  scale 64  1831 tok/s per member
+    gzero 0.82..0.82  gmax 0.000727..0.000727  dxzero 0.02..0.02
+update  4700  tokens  1203200  train kl best 7.157 median 7.157  flips median 281  scale 64  1831 tok/s per member
+    gzero 0.82..0.82  gmax 0.000462..0.000462  dxzero 0.01..0.01
+update  4750  tokens  1216000  train kl best 7.320 median 7.320  flips median 285  scale 64  1834 tok/s per member
+    gzero 0.75..0.75  gmax 0.000456..0.000456  dxzero 0.01..0.01
+update  4800  tokens  1228800  train kl best 6.718 median 6.718  flips median 4970  scale 128  1842 tok/s per member
+    gzero 0.55..0.55  gmax 0.0039..0.0039  dxzero 0.00..0.00
+update  4850  tokens  1241600  train kl best 7.070 median 7.070  flips median 319  scale 128  1843 tok/s per member
+    gzero 0.62..0.62  gmax 0.00239..0.00239  dxzero 0.01..0.01
+update  4900  tokens  1254400  train kl best 6.986 median 6.986  flips median 1756  scale 128  1803 tok/s per member
+    gzero 0.55..0.55  gmax 0.00162..0.00162  dxzero 0.01..0.01
+update  4950  tokens  1267200  train kl best 7.229 median 7.229  flips median 474  scale 128  1809 tok/s per member
+    gzero 0.86..0.86  gmax 0.000306..0.000306  dxzero 0.01..0.01
+update 4998: gradient overflow, loss scale -> 128.0
+update  5000  tokens  1280000  train kl best 6.645 median 6.645  flips median 690  scale 128  1813 tok/s per member
+    gzero 0.68..0.68  gmax 0.00111..0.00111  dxzero 0.01..0.01
+eval at 1280000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  6.480  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update  5050  tokens  1292800  train kl best 7.501 median 7.501  flips median 350  scale 128  1811 tok/s per member
+    gzero 0.67..0.67  gmax 0.00233..0.00233  dxzero 0.01..0.01
+update 5078: gradient overflow, loss scale -> 64.0
+update  5100  tokens  1305600  train kl best 7.309 median 7.309  flips median 358  scale 64  1810 tok/s per member
+    gzero 0.76..0.76  gmax 0.00127..0.00127  dxzero 0.01..0.01
+update  5150  tokens  1318400  train kl best 7.179 median 7.179  flips median 1948  scale 64  1778 tok/s per member
+    gzero 0.67..0.67  gmax 0.000847..0.000847  dxzero 0.01..0.01
+update  5200  tokens  1331200  train kl best 5.950 median 5.950  flips median 958  scale 64  1779 tok/s per member
+    gzero 0.69..0.69  gmax 0.00164..0.00164  dxzero 0.01..0.01
+update  5250  tokens  1344000  train kl best 7.304 median 7.304  flips median 419  scale 64  1786 tok/s per member
+    gzero 0.39..0.39  gmax 0.000755..0.000755  dxzero 0.00..0.00
+update  5300  tokens  1356800  train kl best 6.922 median 6.922  flips median 471  scale 128  1792 tok/s per member
+    gzero 0.45..0.45  gmax 0.00206..0.00206  dxzero 0.00..0.00
+update  5350  tokens  1369600  train kl best 7.408 median 7.408  flips median 1134  scale 128  1793 tok/s per member
+    gzero 0.56..0.56  gmax 0.00279..0.00279  dxzero 0.00..0.00
+update  5400  tokens  1382400  train kl best 7.035 median 7.035  flips median 184  scale 128  1758 tok/s per member
+    gzero 0.62..0.62  gmax 0.00381..0.00381  dxzero 0.01..0.01
+update  5450  tokens  1395200  train kl best 6.530 median 6.530  flips median 577  scale 128  1765 tok/s per member
+    gzero 0.64..0.64  gmax 0.00339..0.00339  dxzero 0.01..0.01
+update  5500  tokens  1408000  train kl best 7.592 median 7.592  flips median 220  scale 256  1770 tok/s per member
+    gzero 0.57..0.57  gmax 0.00406..0.00406  dxzero 0.01..0.01
+update 5509: gradient overflow, loss scale -> 128.0
+update  5550  tokens  1420800  train kl best 6.819 median 6.819  flips median 389  scale 128  1767 tok/s per member
+    gzero 0.70..0.70  gmax 0.00108..0.00108  dxzero 0.01..0.01
+update  5600  tokens  1433600  train kl best 6.734 median 6.734  flips median 106  scale 128  1763 tok/s per member
+    gzero 0.77..0.77  gmax 0.00134..0.00134  dxzero 0.01..0.01
+update  5650  tokens  1446400  train kl best 6.485 median 6.485  flips median 91  scale 128  1738 tok/s per member
+    gzero 0.75..0.75  gmax 0.00167..0.00167  dxzero 0.01..0.01
+update  5700  tokens  1459200  train kl best 6.990 median 6.990  flips median 380  scale 128  1739 tok/s per member
+    gzero 0.73..0.73  gmax 0.000203..0.000203  dxzero 0.01..0.01
+update  5750  tokens  1472000  train kl best 6.801 median 6.801  flips median 408  scale 256  1745 tok/s per member
+    gzero 0.46..0.46  gmax 0.00814..0.00814  dxzero 0.00..0.00
+update 5776: gradient overflow, loss scale -> 128.0
+update  5800  tokens  1484800  train kl best 7.031 median 7.031  flips median 213  scale 128  1754 tok/s per member
+    gzero 0.71..0.71  gmax 0.00134..0.00134  dxzero 0.00..0.00
+update  5850  tokens  1497600  train kl best 7.118 median 7.118  flips median 152  scale 128  1761 tok/s per member
+    gzero 0.60..0.60  gmax 0.002..0.002  dxzero 0.01..0.01
+update  5900  tokens  1510400  train kl best 6.765 median 6.765  flips median 94  scale 128  1743 tok/s per member
+    gzero 0.74..0.74  gmax 0.00164..0.00164  dxzero 0.01..0.01
+update  5950  tokens  1523200  train kl best 6.685 median 6.685  flips median 174  scale 128  1751 tok/s per member
+    gzero 0.73..0.73  gmax 0.000908..0.000908  dxzero 0.00..0.00
+update 5994: gradient overflow, loss scale -> 128.0
+update  6000  tokens  1536000  train kl best 7.301 median 7.301  flips median 247  scale 128  1758 tok/s per member
+    gzero 0.49..0.49  gmax 0.0027..0.0027  dxzero 0.00..0.00
+eval at 1536000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  6.589  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update  6050  tokens  1548800  train kl best 6.753 median 6.753  flips median 220  scale 128  1764 tok/s per member
+    gzero 0.82..0.82  gmax 0.00098..0.00098  dxzero 0.01..0.01
+update  6100  tokens  1561600  train kl best 7.235 median 7.235  flips median 805  scale 128  1769 tok/s per member
+    gzero 0.56..0.56  gmax 0.00063..0.00063  dxzero 0.00..0.00
+update  6150  tokens  1574400  train kl best 6.773 median 6.773  flips median 220  scale 128  1758 tok/s per member
+    gzero 0.73..0.73  gmax 0.00294..0.00294  dxzero 0.01..0.01
+update 6195: gradient overflow, loss scale -> 128.0
+update  6200  tokens  1587200  train kl best 7.190 median 7.190  flips median 277  scale 128  1763 tok/s per member
+    gzero 0.51..0.51  gmax 0.000834..0.000834  dxzero 0.01..0.01
+update  6250  tokens  1600000  train kl best 6.528 median 6.528  flips median 1245  scale 128  1768 tok/s per member
+    gzero 0.55..0.55  gmax 0.000679..0.000679  dxzero 0.01..0.01
+update  6300  tokens  1612800  train kl best 6.811 median 6.811  flips median 99  scale 128  1776 tok/s per member
+    gzero 0.72..0.72  gmax 0.000886..0.000886  dxzero 0.01..0.01
+update  6350  tokens  1625600  train kl best 6.937 median 6.937  flips median 440  scale 128  1784 tok/s per member
+    gzero 0.57..0.57  gmax 0.00172..0.00172  dxzero 0.01..0.01
+update 6392: gradient overflow, loss scale -> 64.0
+update  6400  tokens  1638400  train kl best 7.136 median 7.136  flips median 153  scale 64  1792 tok/s per member
+    gzero 0.88..0.88  gmax 8.77e-05..8.77e-05  dxzero 0.01..0.01
+update  6450  tokens  1651200  train kl best 6.868 median 6.868  flips median 771  scale 64  1785 tok/s per member
+    gzero 0.75..0.75  gmax 0.00106..0.00106  dxzero 0.01..0.01
+update  6500  tokens  1664000  train kl best 6.767 median 6.767  flips median 302  scale 64  1793 tok/s per member
+    gzero 0.88..0.88  gmax 0.000136..0.000136  dxzero 0.01..0.01
+update  6550  tokens  1676800  train kl best 7.125 median 7.125  flips median 521  scale 64  1801 tok/s per member
+    gzero 0.77..0.77  gmax 0.000731..0.000731  dxzero 0.01..0.01
+update  6600  tokens  1689600  train kl best 7.117 median 7.117  flips median 207  scale 128  1809 tok/s per member
+    gzero 0.71..0.71  gmax 0.000976..0.000976  dxzero 0.00..0.00
+update 6629: gradient overflow, loss scale -> 64.0
+update  6650  tokens  1702400  train kl best 7.340 median 7.340  flips median 46  scale 64  1816 tok/s per member
+    gzero 0.81..0.81  gmax 0.000576..0.000576  dxzero 0.01..0.01
+update  6700  tokens  1715200  train kl best 7.014 median 7.014  flips median 308  scale 64  1809 tok/s per member
+    gzero 0.78..0.78  gmax 0.000865..0.000865  dxzero 0.01..0.01
+update  6750  tokens  1728000  train kl best 7.213 median 7.213  flips median 159  scale 64  1817 tok/s per member
+    gzero 0.79..0.79  gmax 0.00118..0.00118  dxzero 0.02..0.02
+update  6800  tokens  1740800  train kl best 6.846 median 6.846  flips median 399  scale 64  1825 tok/s per member
+    gzero 0.79..0.79  gmax 0.000202..0.000202  dxzero 0.01..0.01
+update  6850  tokens  1753600  train kl best 6.964 median 6.964  flips median 199  scale 128  1833 tok/s per member
+    gzero 0.57..0.57  gmax 0.00165..0.00165  dxzero 0.00..0.00
+update 6888: gradient overflow, loss scale -> 64.0
+update  6900  tokens  1766400  train kl best 6.707 median 6.707  flips median 58  scale 64  1840 tok/s per member
+    gzero 0.78..0.78  gmax 0.000666..0.000666  dxzero 0.01..0.01
+update  6950  tokens  1779200  train kl best 7.324 median 7.324  flips median 27  scale 64  1831 tok/s per member
+    gzero 0.75..0.75  gmax 0.00172..0.00172  dxzero 0.01..0.01
+update  7000  tokens  1792000  train kl best 6.794 median 6.794  flips median 131  scale 64  1835 tok/s per member
+    gzero 0.78..0.78  gmax 0.00146..0.00146  dxzero 0.01..0.01
+eval at 1792000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  6.667  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+update  7050  tokens  1804800  train kl best 7.110 median 7.110  flips median 97  scale 64  1839 tok/s per member
+    gzero 0.74..0.74  gmax 0.00125..0.00125  dxzero 0.01..0.01
+update 7093: gradient overflow, loss scale -> 64.0
+update  7100  tokens  1817600  train kl best 6.514 median 6.514  flips median 236  scale 64  1846 tok/s per member
+    gzero 0.71..0.71  gmax 0.000311..0.000311  dxzero 0.01..0.01
+update  7150  tokens  1830400  train kl best 6.747 median 6.747  flips median 73  scale 64  1854 tok/s per member
+    gzero 0.82..0.82  gmax 0.000473..0.000473  dxzero 0.01..0.01
+update  7200  tokens  1843200  train kl best 6.664 median 6.664  flips median 100  scale 64  1847 tok/s per member
+    gzero 0.73..0.73  gmax 0.000559..0.000559  dxzero 0.00..0.00
+update  7250  tokens  1856000  train kl best 7.080 median 7.080  flips median 208  scale 64  1853 tok/s per member
+    gzero 0.84..0.84  gmax 0.000378..0.000378  dxzero 0.01..0.01
+update 7297: gradient overflow, loss scale -> 64.0
+update  7300  tokens  1868800  train kl best 6.618 median 6.618  flips median 99  scale 64  1860 tok/s per member
+    gzero 0.74..0.74  gmax 0.00155..0.00155  dxzero 0.01..0.01
+update  7350  tokens  1881600  train kl best 6.967 median 6.967  flips median 391  scale 64  1867 tok/s per member
+    gzero 0.74..0.74  gmax 0.00147..0.00147  dxzero 0.01..0.01
+update  7400  tokens  1894400  train kl best 7.379 median 7.379  flips median 20  scale 64  1874 tok/s per member
+    gzero 0.79..0.79  gmax 0.00216..0.00216  dxzero 0.02..0.02
+update  7450  tokens  1907200  train kl best 7.415 median 7.415  flips median 439  scale 64  1859 tok/s per member
+    gzero 0.79..0.79  gmax 0.00197..0.00197  dxzero 0.01..0.01
+update 7498: gradient overflow, loss scale -> 64.0
+update  7500  tokens  1920000  train kl best 6.768 median 6.768  flips median 131  scale 64  1863 tok/s per member
+    gzero 0.74..0.74  gmax 0.00193..0.00193  dxzero 0.01..0.01
+update  7550  tokens  1932800  train kl best 6.916 median 6.916  flips median 115  scale 64  1870 tok/s per member
+    gzero 0.73..0.73  gmax 0.00123..0.00123  dxzero 0.01..0.01
+update  7600  tokens  1945600  train kl best 7.184 median 7.184  flips median 63  scale 64  1877 tok/s per member
+    gzero 0.73..0.73  gmax 0.000573..0.000573  dxzero 0.01..0.01
+update  7650  tokens  1958400  train kl best 6.953 median 6.953  flips median 60  scale 64  1884 tok/s per member
+    gzero 0.76..0.76  gmax 0.00114..0.00114  dxzero 0.00..0.00
+update  7700  tokens  1971200  train kl best 7.083 median 7.083  flips median 398  scale 128  1866 tok/s per member
+    gzero 0.36..0.36  gmax 0.00194..0.00194  dxzero 0.00..0.00
+update 7722: gradient overflow, loss scale -> 64.0
+update  7750  tokens  1984000  train kl best 7.355 median 7.355  flips median 49  scale 64  1872 tok/s per member
+    gzero 0.74..0.74  gmax 0.000618..0.000618  dxzero 0.01..0.01
+update  7800  tokens  1996800  train kl best 6.753 median 6.753  flips median 347  scale 64  1877 tok/s per member
+    gzero 0.72..0.72  gmax 0.00219..0.00219  dxzero 0.01..0.01
+update  7850  tokens  2009600  train kl best 7.161 median 7.161  flips median 118  scale 64  1883 tok/s per member
+    gzero 0.74..0.74  gmax 0.00156..0.00156  dxzero 0.01..0.01
+update  7900  tokens  2022400  train kl best 7.029 median 7.029  flips median 262  scale 64  1888 tok/s per member
+    gzero 0.59..0.59  gmax 0.000856..0.000856  dxzero 0.00..0.00
+update  7950  tokens  2035200  train kl best 6.828 median 6.828  flips median 2975  scale 128  1877 tok/s per member
+    gzero 0.35..0.35  gmax 0.00209..0.00209  dxzero 0.00..0.00
+update  8000  tokens  2048000  train kl best 6.806 median 6.806  flips median 297  scale 128  1884 tok/s per member
+    gzero 0.45..0.45  gmax 0.00238..0.00238  dxzero 0.00..0.00
+eval at 2048000 tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):
+  m0  6.427  lr 1.00e-03  theta  12.8  tau   1953  rho x 0.80  noise/theta 1.95
+time per sequence (ms): teacher 36.3, update 20.2, head 11.0, accumulate 10.1, backward 7.0, forward 3.9; teacher text generation 45.4
+throughput excluding text generation: 2893 tok/s per member, 2893 member-tok/s

@@ -91,11 +91,53 @@ How the layer is built for the ANE:
 - **Constants are inputs.** Several `BLOBFILE` constants in one in-memory MIL program fail to load
   (`verifyBundleAtPath: invalid model`) on macOS 27.2.1; a single one works.
 
+## `float-train`: the GPU reference
+
+```sh
+swift run -c release float-train [--ternary | --lr 3e-3 [--schedule]] [--tokens 2048000] [--round 256000] \
+  [--hyper LR,THETA,TAU,RHO] [--seed 0] [--eval 8] [--jsonl PATH]
+```
+
+The same student (d 256, 4 layers, tied embedding, 20.2M parameters) and the same pipeline as `ane-train`, with
+autodiff gradients in fp32 on the GPU. It exists to say what the ANE path should reach.
+- **fp32 (default):** float weights, Adam at `--lr` (default 1e-3); `--schedule` adds warmup and a cosine decay to 0.1x (always on with `--ternary`).
+- **`--ternary`:** the ternary linears are trained with the same TTF kernel and schedules as `ane-train` (`--hyper`
+  default `2e-3,16,1000,1`); only the gradients differ (fp32 on the GPU, not fp16 on the ANE).
+
+At 2.05M tokens, 3 seeds, held-out KL: ternary 2.286 ± 0.13; float at lr 3e-3, one seed: 2.45 (2.39 with the schedule).
+Ternary TTF at 8.2M tokens: 1.832. See [`results/ane-vs-gpu-2026-11-24.md`](results/ane-vs-gpu-2026-11-24.md).
+
+## `scripts/run-queue.sh`
+
+```sh
+scripts/run-queue.sh QUEUEFILE OUTDIR [BINARY=ane-train]
+```
+
+Runs the lines of QUEUEFILE (`name args...`) one after another from a copy of the release binary in OUTDIR, writing
+`name.log` and `name.jsonl` (via `--jsonl`) for each. A run whose log already has its throughput line is skipped, so the
+queue can be restarted. Blank and `#` lines are ignored. Build first: `swift build -c release --build-path .build/out`.
+
 ## `ane-train`: training a ternary model on the ANE
 
 ```sh
-swift run -c release ane-train [--population 8] [--tokens 2048000] [--round 256000] [--accum 1] [--frozen-trits]
+swift run -c release ane-train [--population 8] [--tokens 2048000] [--round 256000] [--accum 1] [--frozen-trits] \
+  [--seed 0] [--hyper LR,THETA,TAU,RHO] [--loss-scale 1024] [--fixed-scale] [--eval 8] [--jsonl PATH] \
+  [--grad-prescale] [--bound] [--bound-alpha 0.1]
 ```
+
+- `--seed N`: initialisation, training data and PBT draws follow it. The eval set does not (fixed, generated under seed 424242).
+- `--hyper LR,THETA,TAU,RHO`: Adam rate, TTF θ, τ and ρ multiplier for every member (default of `float-train`:
+  `2e-3,16,1000,1`). Without it, member 0 has the hand-picked settings and the others random draws (PBT).
+- `--loss-scale S`: starting fp16 loss scale (default 1024). It adapts from max |dx₀| unless `--fixed-scale`.
+- `--eval N`: number of held-out teacher sequences (default 8).
+- `--jsonl PATH`: one JSON object per line: `eval`, `train`, `overflow`, `params`, `done`. Non-finite numbers are null.
+- `--grad-prescale`: per-tensor power-of-two scales inside the ANE backward, so token-sum outputs (`ds_*`, `dk*`, `dg_*`)
+  and per-element ones (`gp_*`) each fit fp16. Every output is now checked for non-finite values, and an overflowing
+  sequence is skipped. See [`results/grad-numerics-2026-11-23.md`](results/grad-numerics-2026-11-23.md).
+- `--bound`, `--bound-alpha A`: after each Adam step, clamp the per-row scales, gains and conv taps so the fp16 forward
+  stays below about 16k. A is the practical row-sum factor (0.1; strict worst case 1, which is infeasible). The bound is
+  practical, not a proof; attention's `e @ (V·2^8)` is unbounded in the worst case. See
+  [`results/forward-bounds-2026-11-24.md`](results/forward-bounds-2026-11-24.md).
 
 Trains a tiny ternary LFM2-shaped student from scratch: d = 256, 4 layers (conv, conv, attention, conv),
 3.4M trits. The teacher is bf16 LFM2-350M, which writes the training text and scores it. Each step:
@@ -113,19 +155,30 @@ Nothing passes through the CPU:
   next program's input.
 - **Self-test:** the trainer checks both directions of zero-copy at startup.
 
-First result, 2,000 steps of one 256-token sequence each, KL on 8 held-out teacher sequences:
+**Result.** Held-out KL on 8 fixed teacher sequences after 2.05M tokens, defaults, P = 1, 3 seeds. The same ternary
+model trained on the GPU with fp32 gradients (`float-train --ternary`) is the reference:
 
-| step | TTF | trits frozen (only float parts learn) |
-|---|---|---|
-| 0 | 9.70 | 9.70 |
-| 500 | 9.83 | 9.76 |
-| 1,000 | 8.91 | 9.59 |
-| 2,000 | 8.17 | 9.48 |
+| path | s0 | s1 | s2 | mean ± std |
+|---|---|---|---|---|
+| ANE ternary, `--grad-prescale --bound` | 2.203 | 2.278 | 2.253 | **2.245 ± 0.04** (0 of 3 diverged) |
+| GPU ternary TTF, fp32 gradients | 2.232 | 2.439 | 2.187 | 2.286 ± 0.13 |
+| ANE ternary, `--grad-prescale` only | 2.150 | diverged ~1.0M | diverged ~1.0M | |
+| ANE ternary, neither | diverged ~0.3M | | | |
 
-Receipts: [`results/ane-ttf-2026-11-23.txt`](results/ane-ttf-2026-11-23.txt),
-[`results/ane-frozen-2026-11-23.txt`](results/ane-frozen-2026-11-23.txt).
+The forward bound is needed (without it 3 of 4 runs diverged, from a nonfinite forward as the row scales grow); the
+backward still overflows 60–93 times per run, each detected and skipped. Full curves, flags, caveats (single machine,
+PBT selects on the eval set, attention unbounded) and the JSONL of every run:
+[`results/ane-vs-gpu-2026-11-24.md`](results/ane-vs-gpu-2026-11-24.md).
 
-**The trunk learns, but the update is too noisy.** Each update sees 256 tokens; TTF's paper used 32k. Each
+Long runs (8.2M tokens): pending
+
+**Earlier numbers were wrong.** The first P = 1 results (held-out KL 7.4–9.9 at 2.05M tokens, and the "trunk learns
+slowly" curves below) came from a bug, not from ternary training or fp16 as such: the backward's token-sum outputs
+(`ds_*`, `dk*`, `dg_*`, mostly layer 0) overflowed fp16 and went unchecked into Adam, and each overflow that was caught
+halved the loss scale until the per-element gradients underflowed. P = 1 was also broken at the time by a TTF kernel
+address-space bug (7fd7052). The measurements below are kept as history and should not be read as the current state.
+
+**(Superseded, old overflow handling.) The trunk learns, but the update is too noisy.** Each update sees 256 tokens; TTF's paper used 32k. Each
 update is normalised to about ±ρ per entry, so pure noise drives the accumulator to a typical size of
 ρ·√(τ/2) ≈ 22ρ. At ρ near 1 that crosses θ = 16, so trits flip on noise. That matches the curve:
 - **Steps 250–750 (ρ ≈ 1):** flips peak and held-out KL gets worse than the frozen control.
@@ -135,7 +188,7 @@ update is normalised to about ±ρ per entry, so pure noise drives the accumulat
 **Speed:** about 90 ms per step, or 2,900 tokens/s overall; 4,600 tokens/s excluding text generation. The
 ANE accounts for 8.8 ms of each step (forward 2.9, backward 5.9); most of the rest is the 350M teacher.
 
-**Accumulating more tokens per update hurt, at equal tokens.** Same seed, data and budget (2.05M tokens), only
+**(Superseded, old overflow handling.) Accumulating more tokens per update hurt, at equal tokens.** Same seed, data and budget (2.05M tokens), only
 tokens per update varied (held-out KL):
 
 | tokens seen | 256 per update (8,000 updates) | 2k per update (1,000) | 8k per update (250) |
@@ -176,7 +229,7 @@ about P = 4, where the ANE is saturated:
 
 Receipt: [`results/population-probe-2026-11-23.txt`](results/population-probe-2026-11-23.txt).
 
-**Population-based training, 8 members, 2.05M tokens.** Members start from the hand-picked settings (member 0)
+**(Superseded, old overflow handling.) Population-based training, 8 members, 2.05M tokens.** Members start from the hand-picked settings (member 0)
 and from random draws over Adam rate 3e-4–2e-2, θ 2–64, τ 50–4,000 and a ρ multiplier of 0.1–2. Every 256k tokens
 the worse half copies the better half and perturbs its hyperparameters by ×0.8 or ×1.25:
 
@@ -192,7 +245,8 @@ Receipt: [`results/ane-pbt8-2026-11-23.txt`](results/ane-pbt8-2026-11-23.txt). T
 rates above 9e-3 diverged by update ~200 and were replaced. Throughput was 11,650 member-tokens/s excluding text
 generation.
 
-Treat the comparison with the single runs (7.43 at 2.05M tokens) with care:
+With the fixed binary, PBT-8 with `--grad-prescale` reaches 2.243 at 2.05M tokens (4 diverged members replaced), no better than a
+P = 1 bound+prescale run. The old comparison with the single runs (7.43) needs care:
 - **Not reproducible.** Member 0 has the single run's exact settings, data and initialisation, yet reached 8.00
   at 256k tokens against about 9.9 alone. Members are bit-identical on the ANE; what differed is shared loss
   scaling and skipped sequences. With noise-driven flips at ρ ≈ 1, the trajectory seems to be chaotic, so
