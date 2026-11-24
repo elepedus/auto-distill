@@ -229,3 +229,16 @@ About 1.5 hours is deliberately unallocated.
   - Results 2.047 / 2.156 / 2.253 (mean 2.152), against defaults 2.160 / 2.243 / 2.250 (mean 2.218).
   - Paired differences: −0.11, −0.09, +0.00. Suggestive; selected on the same eval set.
   - End of the overnight session.
+- 2026-11-24 07:00. **Bound on by default** (8f94889; `--no-bound` to disable).
+- **Next, as discussed with the user:**
+  1. **Fuse teacher scoring into generation.** The scoring pass (24.6 of 60 ms per sequence) is redundant with
+     the decode logits.
+  2. **`float-train --ternary-ste`.** fp32 master weights with a straight-through estimator: is the 0.2-nat
+     float lead capacity, or the TTF optimiser?
+  3. **Teacher-led vs teacher-verified (on-policy) data**, built on step 1's pipeline:
+     - **Signal:** per-token overlap α = Σ min(p, q) = 1 − TV, the speculative acceptance rate. It's free from
+       logits we already have.
+     - **Knob:** tempered verification, accept with probability min(1, (p/q)^β). β = 1 is exact teacher text;
+       β = 0 is pure on-policy.
+     - **Arms (float-train --ternary first):** teacher-led, a fixed switch, a λ ramp, and an α-triggered switch.
+     - **Evals:** held-out KL on teacher text, plus the teacher's KL/NLL on the student's own samples.
