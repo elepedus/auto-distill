@@ -1,0 +1,48 @@
+eval set checksum: 753177917 (8 sequences)
+float-train: 20189824 parameters; 1000 updates of 256 tokens; lr 0.0003; ternary STE; scheduled
+eval at 0 tokens: held-out kl 9.081  lr 3.00e-04  zero trits 0.310
+update     1  tokens      256  train kl 10.263  flips 0  32 tok/s
+update    25  tokens     6400  train kl 9.746  flips 0  684 tok/s
+update    50  tokens    12800  train kl 9.850  flips 0  1188 tok/s
+update    75  tokens    19200  train kl 9.615  flips 0  1576 tok/s
+update   100  tokens    25600  train kl 9.318  flips 0  1887 tok/s
+update   125  tokens    32000  train kl 9.364  flips 0  2139 tok/s
+update   150  tokens    38400  train kl 9.155  flips 0  2344 tok/s
+update   175  tokens    44800  train kl 8.805  flips 0  2517 tok/s
+update   200  tokens    51200  train kl 8.809  flips 0  2665 tok/s
+update   225  tokens    57600  train kl 7.954  flips 0  2791 tok/s
+update   250  tokens    64000  train kl 8.010  flips 0  2902 tok/s
+update   275  tokens    70400  train kl 7.249  flips 0  2201 tok/s
+update   300  tokens    76800  train kl 7.457  flips 0  2302 tok/s
+update   325  tokens    83200  train kl 7.972  flips 0  2392 tok/s
+update   350  tokens    89600  train kl 7.050  flips 0  2476 tok/s
+update   375  tokens    96000  train kl 7.262  flips 0  2552 tok/s
+update   400  tokens   102400  train kl 6.879  flips 0  2623 tok/s
+update   425  tokens   108800  train kl 7.317  flips 0  2689 tok/s
+update   450  tokens   115200  train kl 6.989  flips 0  2751 tok/s
+update   475  tokens   121600  train kl 7.014  flips 0  2808 tok/s
+update   500  tokens   128000  train kl 7.076  flips 0  2862 tok/s
+eval at 128000 tokens: held-out kl 6.360  lr 3.00e-04  zero trits 0.310
+update   525  tokens   134400  train kl 6.783  flips 0  2456 tok/s
+update   550  tokens   140800  train kl 7.516  flips 0  2511 tok/s
+update   575  tokens   147200  train kl 7.419  flips 0  2563 tok/s
+update   600  tokens   153600  train kl 6.853  flips 0  2612 tok/s
+update   625  tokens   160000  train kl 6.885  flips 0  2658 tok/s
+update   650  tokens   166400  train kl 6.317  flips 0  2704 tok/s
+update   675  tokens   172800  train kl 6.986  flips 0  2747 tok/s
+update   700  tokens   179200  train kl 7.066  flips 0  2788 tok/s
+update   725  tokens   185600  train kl 6.886  flips 0  2828 tok/s
+update   750  tokens   192000  train kl 6.220  flips 0  2865 tok/s
+update   775  tokens   198400  train kl 6.652  flips 0  2581 tok/s
+update   800  tokens   204800  train kl 6.654  flips 0  2618 tok/s
+update   825  tokens   211200  train kl 7.450  flips 0  2654 tok/s
+update   850  tokens   217600  train kl 7.116  flips 0  2688 tok/s
+update   875  tokens   224000  train kl 7.157  flips 0  2721 tok/s
+update   900  tokens   230400  train kl 6.676  flips 0  2753 tok/s
+update   925  tokens   236800  train kl 7.387  flips 0  2783 tok/s
+update   950  tokens   243200  train kl 7.337  flips 0  2813 tok/s
+update   975  tokens   249600  train kl 7.083  flips 0  2842 tok/s
+update  1000  tokens   256000  train kl 6.544  flips 0  2871 tok/s
+eval at 256000 tokens: held-out kl 5.740  lr 3.00e-04  zero trits 0.310
+teacher text generation 33.5 ms per sequence
+throughput excluding text generation: 4607 tok/s per member, 4607 member-tok/s

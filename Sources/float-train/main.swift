@@ -1,10 +1,11 @@
 // Float GPU baseline for ane-train: the same LFM2-shaped student (d 256, conv/conv/attn/conv, tied head), plain fp32
 // weights, Adam on everything, MLX autodiff, same teacher-generated data and held-out KL eval.
 //   float-train [--tokens 2048000] [--round 256000] [--lr 1e-3] [--seed 0] [--eval 8] [--jsonl PATH] [--schedule]
-//               [--ternary [--hyper lr,theta,tau,rho]]
+//               [--ternary [--hyper lr,theta,tau,rho]] [--ternary-ste]
 // --ternary: every linear ane-train makes ternary is trits x per-row scale (fp32 autodiff gives dL/dtrit, trits trained by the
 // same TTF kernel as ane-train, scales/embedding/norms/taps by Adam); schedules are ane-train's. --schedule: ane-train's Adam
-// warm-up + cosine on plain float too.
+// warm-up + cosine on plain float too. --ternary-ste: the same linears keep a latent fp32 weight W (float init); the forward uses
+// s * round(clip(W/s, -1, 1)) with a straight-through gradient, Adam on everything (--lr is the peak, ane-train's schedule).
 import Foundation
 import LFM2ANE
 import LMLoad
@@ -17,7 +18,7 @@ func option(_ name: String) -> String? { CommandLine.arguments.firstIndex(of: "-
 let T = 256, D = 256, F = 768, H = 4, hd = 64, V = 65536
 let kinds = [false, false, true, false]  // attention layer?
 let tokenBudget = Int(option("tokens") ?? "2048000")!, roundTokens = Int(option("round") ?? "256000")!
-let ternary = CommandLine.arguments.contains("--ternary"), scheduled = ternary || CommandLine.arguments.contains("--schedule")
+let ternary = CommandLine.arguments.contains("--ternary"), ste = CommandLine.arguments.contains("--ternary-ste"), scheduled = ternary || ste || CommandLine.arguments.contains("--schedule")
 let hyp = (option("hyper") ?? "2e-3,16,1000,1").split(separator: ",").map { Float($0)! }  // lr, theta, tau, rho
 let lr = ternary ? hyp[0] : Float(option("lr") ?? "1e-3")!, theta = hyp[1], tau = hyp[2], rhoScale = hyp[3], beta2: Float = 0.95
 let seed = Int(option("seed") ?? "0")!, evalCount = Int(option("eval") ?? "8")!
@@ -48,6 +49,25 @@ func compose(_ p: [MLXArray], _ trits: [MLXArray]) -> [MLXArray] {
     var p = p
     for (j, i) in ternaryIndices().enumerated() { p[i] = trits[j] * p[i].expandedDimensions(axis: 1) }
     return p
+}
+/// BitNet-style STE: W_q = s * round(clip(W/s, -1, 1)), forward value W_q, gradient straight to W. The per-row scale s is
+/// derived from W (absmean over the row, as BitNet b1.58 but per row), not a separate parameter.
+func steQuantize(_ p: [MLXArray]) -> [MLXArray] {
+    var p = p
+    for i in ternaryIndices() {
+        let w = p[i], s = abs(w).mean(axis: 1, keepDims: true) + 1e-5
+        p[i] = w + stopGradient(s * round(clip(w / s, min: -1, max: 1)) - w)
+    }
+    return p
+}
+/// Fraction of zero trits over all quantised linears.
+func zeroFraction(_ p: [MLXArray]) -> Float {
+    var z = MLXArray(Float(0)), n = 0
+    for i in ternaryIndices() {
+        let w = p[i], s = abs(w).mean(axis: 1, keepDims: true) + 1e-5
+        z = z + (round(clip(w / s, min: -1, max: 1)) .== 0).asType(.float32).sum(); n += w.size
+    }
+    return z.item(Float.self) / Float(n)
 }
 func initParams(ternary: Bool) -> [MLXArray] {
     func lin(_ n: Int, _ k: Int) -> MLXArray {  // ane-train: trits x scale, scale 1/sqrt(2k/3); float baseline: std 1/sqrt(k)
@@ -130,7 +150,7 @@ var pool: [[Int32]] = []
 var params = initParams(ternary: ternary)
 eval(params)
 let count = params.reduce(0) { $0 + $1.size }
-print("float-train: \(count) parameters; \(updates) updates of \(T) tokens; lr \(lr)" + (ternary ? "; ternary TTF theta \(theta) tau \(tau) rho x \(rhoScale)" : "") + (scheduled ? "; scheduled" : ""))
+print("float-train: \(count) parameters; \(updates) updates of \(T) tokens; lr \(lr)" + (ste ? "; ternary STE" : "") + (ternary ? "; ternary TTF theta \(theta) tau \(tau) rho x \(rhoScale)" : "") + (scheduled ? "; scheduled" : ""))
 
 // Ternary state: trits live in fp16 shared buffers (ttfKernel updates them in place); MLX sees them as fp32 arguments.
 final class Trits {
@@ -161,16 +181,17 @@ var m = params.map { zeros(like: $0) }, v = m
 // a = params (49; ternary linears hold their scale [n]) + trits (0 or 28, fp32) + [tokens, target]; grads for all but the last two.
 let lossGrad = valueAndGrad({ (a: [MLXArray]) -> [MLXArray] in
     let p = Array(a[0 ..< 49]), trits = Array(a[49 ..< a.count - 2])
-    return [klLoss(trits.isEmpty ? p : compose(p, trits), a[a.count - 2], a[a.count - 1])]
+    return [klLoss(trits.isEmpty ? (ste ? steQuantize(p) : p) : compose(p, trits), a[a.count - 2], a[a.count - 1])]
 }, argumentNumbers: Array(0 ..< params.count + tritState.count))
 @MainActor func evaluate() -> Float {
     var total = MLXArray(Float(0))
-    for (tokens, target) in zip(evalSet, evalTargets) { total = total + klLoss(ternary ? compose(params, tritState.map(\.value)) : params, tokens, target); eval(total) }
+    for (tokens, target) in zip(evalSet, evalTargets) { total = total + klLoss(ternary ? compose(params, tritState.map(\.value)) : ste ? steQuantize(params) : params, tokens, target); eval(total) }
     return (total / Float(evalSet.count)).item(Float.self)
 }
 @MainActor func report(_ kl: Float, tokens: Int) {
-    emit("{\"type\":\"eval\",\"tokens\":\(tokens),\"member\":0,\"kl\":\(num(kl)),\"lr\":\(lr)}")
-    print(String(format: "eval at %d tokens: held-out kl %.3f  lr %.2e", tokens, kl, lr))
+    let zeros = ste ? ",\"zeros\":\(zeroFraction(params))" : ""
+    emit("{\"type\":\"eval\",\"tokens\":\(tokens),\"member\":0,\"kl\":\(num(kl)),\"lr\":\(lr)\(zeros)}")
+    print(String(format: "eval at %d tokens: held-out kl %.3f  lr %.2e", tokens, kl, lr) + (ste ? String(format: "  zero trits %.3f", zeroFraction(params)) : ""))
 }
 
 let started = Date()
