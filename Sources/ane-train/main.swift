@@ -31,6 +31,16 @@ let seed = Int(option("seed") ?? "0")!
 let fixedScale = CommandLine.arguments.contains("--fixed-scale")  // never halve or double the loss scale
 let prescale = CommandLine.arguments.contains("--grad-prescale")  // per-tensor power-of-two gradient scales inside the ANE backward
 var kExp = [String: [Int]](), gseen = [String: MLXArray](), dxSeen: Float = 0  // prescale state, below
+// --bound: after every Adam step the float parameters are clamped into a box that keeps the fp16 forward below ~16k
+// (derivation in results/forward-bounds-2026-11-24.md). R = alpha*D is the practical bound on |sum_j trit_j a_j| / max|a|
+// (strict worst case: alpha = 1); gain cap g, tap caps kc, budget B for each residual increment (r, m).
+let bound = CommandLine.arguments.contains("--bound")
+let alpha = Float(option("bound-alpha") ?? "0.1")!, gCap: Float = 1.5, tapCap: [Float] = [0.5, 0.5, 1.5], budget: Float = 2048
+let rowSum = alpha * Float(D), sOut: Float = 0.12  // sOut: cap of the scale of o (mixer output); chosen so sIn is not starved
+let yCap = cbrt(budget / (rowSum * tapCap.reduce(0, +) * sOut))  // conv mixer: r <= sOut*R*K*Y^3 <= budget, Y = sIn*R*g
+let scaleCap = ["b": yCap / (rowSum * gCap), "c": yCap / (rowSum * gCap), "x": yCap / (rowSum * gCap), "q": yCap / (rowSum * gCap),
+                "k": yCap / (rowSum * gCap), "v": yCap / (rowSum * gCap), "w1": yCap / (rowSum * gCap), "w3": yCap / (rowSum * gCap),
+                "o": sOut, "w2": budget / (rowSum * yCap * yCap)]  // ffn: m <= s_w2*R*Y^2 <= budget
 let evalCount = Int(option("eval") ?? "8")!
 MLXRandom.seed(UInt64(seed))  // init and training data follow --seed; the eval set is fixed (seed 424242, below)
 
@@ -91,6 +101,7 @@ func members(_ a: MLXArray, like x: MLXArray) -> MLXArray { a.reshaped([P] + Arr
 final class Param {
     var value: MLXArray, m: MLXArray, v: MLXArray
     let buffer: SharedBuffer?, heads: Int
+    var limit: Float? = nil  // --bound: |value| <= limit after every update
     init(_ value: MLXArray, buffer: SharedBuffer? = nil, heads: Int = 1) {
         self.value = value; m = zeros(like: value); v = zeros(like: value); self.buffer = buffer; self.heads = heads
     }
@@ -101,6 +112,7 @@ final class Param {
         m = 0.9 * m + 0.1 * grad; v = 0.999 * v + 0.001 * grad * grad
         let mHat = m / (1 - pow(0.9, Float(t))), vHat = v / (1 - pow(0.999, Float(t)))
         value = value - members(rate, like: value) * mHat / (sqrt(vHat) + 1e-8)
+        if let l = limit { value = clip(value, min: MLXArray(-l), max: MLXArray(l)) }
         return sync()
     }
     func select(_ source: MLXArray) -> MLXArray? {  // slot q takes member source[q]
@@ -159,6 +171,13 @@ var layers: [Layer] = kinds.map { attention in
     }
     eval(floats.values.compactMap { $0.sync() })
     return Layer(attention: attention, ternaries: ternaries, floats: floats)
+}
+if bound {
+    for l in layers {
+        for t in l.ternaries { t.scale.limit = scaleCap[t.name] }
+        for (name, p) in l.floats { p.limit = name.hasPrefix("g_") ? gCap : tapCap[Int(name.dropFirst())!] }
+    }
+    print(String(format: "bound: alpha %.2f, Y cap %.2f, scale caps in %.3f o %.3f w2 %.3f, gain %.1f, taps %@", alpha, yCap, scaleCap["b"]!, sOut, scaleCap["w2"]!, gCap, "\(tapCap)"))
 }
 let allParams: [Param] = [embedding, finalNorm] + layers.flatMap { l in l.ternaries.map(\.scale) + Array(l.floats.values) }
 
@@ -249,7 +268,21 @@ func scatterRows(_ dx: MLXArray, _ tokens: MLXArray) -> MLXArray { MLXArray.zero
     }
     return (total / Float(evalSet.count)).asArray(Float.self)
 }
+/// Max |value| of every float parameter group of member 0, layer by layer: (name, max).
+@MainActor func paramMaxes() -> [(String, Float)] {
+    func top(_ p: Param) -> Float { abs(p.value[0]).max().item(Float.self) }
+    var out: [(String, Float)] = [("embed", top(embedding)), ("final", top(finalNorm))]
+    for (i, l) in layers.enumerated() {
+        out += l.floats.sorted { $0.key < $1.key }.map { ("L\(i).\($0.key)", top($0.value)) }
+        out += l.ternaries.map { ("L\(i).s_\($0.name)", top($0.scale)) }
+        out.append(("L\(i).y", (try? shared(l.fwd, "y").reshaped(P, -1)[0]).map { abs($0).max().item(Float.self) } ?? .nan))  // residual stream, last forward
+    }
+    return out
+}
 @MainActor func report(_ kl: [Float], tokens: Int) {
+    let maxes = paramMaxes()
+    print("  params max|.| m0: " + maxes.map { String(format: "%@ %.3g", $0.0, $0.1) }.joined(separator: " "))
+    emit("{\"type\":\"params\",\"tokens\":\(tokens)," + maxes.map { "\"\($0.0)\":\(num($0.1))" }.joined(separator: ",") + "}")
     print("eval at \(tokens) tokens (member: held-out kl, hyperparameters; noise/theta = rho x·sqrt(tau/2)/theta):")
     for p in kl.indices.sorted(by: { kl[$0] < kl[$1] }) {
         let h = hyper[p]
