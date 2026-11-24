@@ -226,13 +226,17 @@ eval(params)
 let count = params.reduce(0) { $0 + $1.size }
 print("float-train: \(count) parameters; \(updates) updates of \(T) tokens; lr \(lr)" + (ste ? "; ternary STE" : "") + (ternary ? "; ternary TTF theta \(theta) tau \(tau) rho x \(rhoScale)" : "") + (scheduled ? "; scheduled" : ""))
 
+// --acc fp32|fp16|int8|stateless: TTF accumulator storage (4 / 2 / 1 / 0 bytes per weight).
+let accMode = option("acc") ?? "fp32", pscale = Float(option("pscale") ?? "1")!  // pscale: stateless move-probability factor
+let accDType: DType = accMode == "fp16" ? .float16 : accMode == "int8" ? .int8 : .float32
+precondition(["fp32", "fp16", "int8", "stateless"].contains(accMode), "--acc fp32|fp16|int8|stateless")
 // Ternary state: trits live in fp16 shared buffers (ttfKernel updates them in place); MLX sees them as fp32 arguments.
 final class Trits {
     let n: Int, k: Int, buffer: SharedBuffer
     var acc: MLXArray, rows: MLXArray, cols: MLXArray
     init(n: Int, k: Int) {
         self.n = n; self.k = k; buffer = SharedBuffer([1, 1, n, k])
-        acc = MLXArray.zeros([n * k]); rows = MLXArray.zeros([1, n]); cols = MLXArray.zeros([1, k])
+        acc = MLXArray.zeros([accMode == "stateless" ? 1 : n * k], dtype: accDType); rows = MLXArray.zeros([1, n]); cols = MLXArray.zeros([1, k])
         eval(buffer.write(MLXRandom.randInt(-1 ..< 2, [n * k]).asType(.float16)))
     }
     var value: MLXArray { buffer.array.reshaped(n, k).asType(.float32) }
@@ -241,11 +245,17 @@ final class Trits {
         let g2 = g * g
         rows = beta2 * rows + (1 - beta2) * g2.mean(axis: 1).reshaped(1, n); cols = beta2 * cols + (1 - beta2) * g2.mean(axis: 0).reshaped(1, k)
         let correction = 1 - pow(beta2, Float(t)), r = rows / correction
-        let params = stacked([MLXArray(rho), MLXArray(leak), MLXArray(theta), r.mean()], axis: 0)
-        let out = ttfKernel([g.reshaped(-1), acc, r.reshaped(-1), (cols / correction).reshaped(-1), params, buffer.array],
-                            template: [("N", n), ("K", k)], grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
-                            outputShapes: [[n * k], [n * k]], outputDTypes: [.float32, .float32])
-        acc = out[0]
+        let params = stacked([MLXArray(accMode == "stateless" ? rho * pscale : rho), MLXArray(leak), MLXArray(theta), r.mean()], axis: 0)
+        let rowsF = r.reshaped(-1), colsF = (cols / correction).reshaped(-1)
+        let out = accMode == "fp32"
+            ? ttfKernel([g.reshaped(-1), acc, rowsF, colsF, params, buffer.array],
+                        template: [("N", n), ("K", k)], grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
+                        outputShapes: [[n * k], [n * k]], outputDTypes: [.float32, .float32])
+            : ttfLeanKernel([g.reshaped(-1), acc, rowsF, colsF, params, buffer.array, MLXArray(UInt32(t))],
+                            template: [("N", n), ("K", k), ("MODE", accMode == "fp16" ? 1 : accMode == "int8" ? 2 : 3), ("T", accDType)],
+                            grid: (n * k, 1, 1), threadGroup: (256, 1, 1),
+                            outputShapes: [[accMode == "stateless" ? 1 : n * k], [n * k]], outputDTypes: [accDType, .float32])
+        if accMode != "stateless" { acc = out[0] }
         return out[1].sum()
     }
 }

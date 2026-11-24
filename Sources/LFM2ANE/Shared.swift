@@ -79,3 +79,39 @@ public let ttfKernel = MLXFast.metalKernel(
         acc_out[idx] = a - q[2] * d;
         moved[idx] = d != 0.0f ? 1.0f : 0.0f;
         """)
+
+/// Lean-state TTF variants (float-train --acc), same params layout as ttfKernel plus a uint step. Template: N, K, MODE, T (acc dtype).
+/// MODE 1 (fp16): acc stored as half. MODE 2 (int8): acc stored as int8 in units of theta/127 (|A| saturates at theta), written back with
+/// stochastic rounding: q = floor(A*127/theta + r), r ~ U[0,1) from a counter hash of (index, step), so E[q] is unbiased.
+/// MODE 3 (stateless): no accumulator; a trit steps one level toward sign(u) with probability min(1, |u|/theta), clamped to [-1, 1].
+/// Drift per step is u, as for a non-leaky accumulator, but each step is a Bernoulli draw rather than a deterministic integrator,
+/// so the variance of the net movement is ~|u| theta per step (versus a residual < theta/2 for the accumulator); there is no leak.
+public let ttfLeanKernel = MLXFast.metalKernel(
+    name: "ttf_fire_lean", inputNames: ["g", "acc", "rowv", "colv", "params", "trits", "step"], outputNames: ["acc_out", "moved"],
+    source: """
+        uint idx = thread_position_in_grid.x;
+        if (idx >= g_shape[0]) return;
+        uint p = idx / (N * K), local = idx % (N * K), i = local / K, j = local % K;
+        auto q = params + 4 * p;
+        float v = rowv[p * N + i] * colv[p * K + j] / q[3];
+        float u = -q[0] * g[idx] / (metal::sqrt(v) + 1e-20f);
+        uint h = idx ^ (step * 0x9E3779B9u);  // lowbias32 counter hash
+        h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+        float r = float(h >> 8) * (1.0f / 16777216.0f);
+        float theta = q[2], t = float(trits[idx]), d = 0.0f, a = 0.0f;
+        if (MODE == 3) {
+            if (r < metal::min(1.0f, metal::abs(u) / theta)) d = u > 0.0f ? 1.0f : -1.0f;
+            if (d > 0.0f && t >= 1.0f) d = 0.0f;
+            if (d < 0.0f && t <= -1.0f) d = 0.0f;
+        } else {
+            float a0 = MODE == 2 ? float(acc[idx]) * (theta / 127.0f) : float(acc[idx]);
+            a = q[1] * a0 + u;
+            if (a >= theta && t < 1.0f) d = 1.0f;
+            else if (a <= -theta && t > -1.0f) d = -1.0f;
+            a -= theta * d;
+            if (MODE == 2) acc_out[idx] = T(metal::clamp(metal::floor(a * (127.0f / theta) + r), -127.0f, 127.0f));
+            else acc_out[idx] = T(a);
+        }
+        if (d != 0.0f) ((device half*)trits)[idx] = half(t + d);
+        moved[idx] = d != 0.0f ? 1.0f : 0.0f;
+        """)
