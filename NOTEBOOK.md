@@ -268,3 +268,32 @@ About 1.5 hours is deliberately unallocated.
   - **Speed:** ane-train 6268 tok/s excluding generation, generation 34.5 ms/seq, ~3.4k tok/s end to end (was
     ~2.8k). float-train --ternary 9444 tok/s, ~4.2k end to end. Teacher decoding now dominates, which on-policy
     data would remove.
+- 2026-11-24 14:30. **Teacher-led vs on-policy** (`results/onpolicy-2026-11-24.md`; float-train --ternary,
+  2.05M tokens).
+  - **α (train) rises:** 0.09 at 256k, 0.27 at 512k, 0.37, 0.48 at 1M, then plateaus at ~0.42–0.54.
+  - **Held-out KL** on teacher text, seed 0:
+
+    | run | held-out KL |
+    |---|---|
+    | A teacher-led | 2.190 |
+    | B all on-policy | 3.117 |
+    | C ramp 0.5–1.5M | 2.592 |
+    | D α-triggered (fired early) | 2.708 |
+    | E half on-policy after 1M | 2.278 |
+
+  - **Paired seed 1:** A 2.353 vs E 2.322. So E ties A on teacher-text KL (n = 2).
+  - **Exposure bias is real.** The teacher-led student's KL on its own text is 2.5–3.4, against ~2.2 on teacher
+    text. E halves that on-policy KL (1.2–1.5).
+  - **But samples don't get more teacher-plausible.** Teacher NLL is worse for E (~4.6 vs ~2.2). It's measured
+    on 8 samples (range 1.1–9.6), so it's very noisy.
+  - **Reading:** forward KL on student text is mass-covering. It teaches the student to match the teacher in its
+    own states, but doesn't reward plausible sampling. The on-policy literature uses reverse KL or JSD there
+    for that reason.
+  - **No speed gain.** A student sequence costs ~29 ms (8 ms sampling plus ~21 ms scoring), against ~34 ms of
+    teacher decoding. The teacher's forward FLOPs per token (~0.7 GFLOP) are the floor for any
+    teacher-scored scheme. The real lever is sharing the teacher across a population.
+  - **Next:**
+    - reverse KL / JSD on the on-policy part;
+    - a 64-sample on-policy eval;
+    - budgets of 8.2M tokens, where exposure bias should matter more;
+    - port to the ANE only after a clear winner.
