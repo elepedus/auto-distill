@@ -399,3 +399,20 @@ and inference co-optimised for this Mac.
 **Checkpoint format** (A1 and A3 agree): a directory holding the base `config.json` plus `model.safetensors`.
 For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) and optionally `<path>.colscale`
 (fp32 [K]); every other parameter under its mlx-swift-lm name.
+- 2026-11-24 22:25. **A3: ANE inference of the ternary 350M** (`ane-infer`, `results/ane-infer-2026-11-24.md`).
+  - **Parity with the GPU ternary model:** prefill KL 0.0002, argmax 98.9%; decode argmax 100%; no overflow.
+  - **The ANE is slower than the GPU on the M2 Max:**
+
+    | path | prefill tok/s | decode tok/s |
+    |---|---|---|
+    | ANE | 3.9k (3.2–3.7 ms per layer) | ~30 |
+    | GPU bf16 | 10.8k | 157–223 |
+
+    Decode looks dominated by per-program dispatch, 16 programs per token; fusing layers is the fix.
+  - **Decision: co-optimised inference on this Mac = the GPU with packed weights.** Decode is bandwidth-bound, and
+    ternary is exactly MLX 2-bit affine (q = t+1, scale = s, bias = −s), so ~8× fewer weight bytes than bf16.
+    Agent B4 is building an exact export and a benchmark.
+  - **Colscales** are tied per shared input (q/k/v; w1/w3), so they fold into the norm gains. out_proj/o_proj/w2
+    colscales fold into the C/v/w3 rows. Zero inference overhead.
+  - **The ANE's role on this machine:** concurrency (student or writer beside the GPU teacher) and efficiency, not
+    peak speed.
