@@ -431,3 +431,9 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
     A 4-bit embedding costs KL 0.47, so the embedding stays bf16; it is most of the 224 MB.
   - **Plan adjustment.** The 8.2M baseline runs at only ~413 tok/s while agents share the GPU, so it can't finish
     before Phase C. At D1 it gets stopped wherever it is, and the final run gets the GPU alone.
+- 2026-11-24 23:00. **A1 merged.**
+  - **Checkpoints:** `--save DIR --save-every N --resume DIR`. A resume is bit-continuous on the eval.
+  - **Schedule:** `--schedule wsd --decay-frac F`.
+  - **Accumulators:** `--acc int8`, with the residual init quantised. At 128k tokens: KL 2.81 vs 2.77 for fp32.
+  - **Profiling:** `--profile`. Per update: generation ~40% of wall time, then forward+backward, then TTF+Adam. No
+    throughput change was committed: bf16 trit copies gave no gain. Contended numbers are unreliable.
