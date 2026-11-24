@@ -449,3 +449,11 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
   - **The 8.2M cosine baseline was stopped at 2.05M:** KL 1.012, perplexity 265. The 2.05M-schedule run reached
     1.248 / 456 at the same tokens. Cooling early hurts, so use WSD with a long plateau.
   - **Screening `--layerwise 1024000`** (then 512k end to end) to size the layerwise phase of the final run.
+- 2026-11-24 23:50. **A2 merged** (caaa075): `--colscale` (tied by default) and `--layerwise TOKENS`. A2's 256k
+  layerwise + 512k e2e trial: 1.138 / perplexity 305.
+  - **Colscale: no gain.** KL 1.931 vs 1.898; with layerwise, 1.177 vs 1.138. Dropped from the recipe, which keeps
+    the architecture simpler.
+  - **`--layerwise 1024000` screen:** handover KL **1.426** (256k gave 3.005). Then e2e 128k → 1.015, 256k → 0.930.
+    Mean per-layer relative MSE 0.084 at 96k → 0.051 at 1M, still falling.
+  - **D1, provisional:** the final run gets a layerwise phase of ~3M tokens, then e2e with WSD. Screening the float
+    Adam lr (3e-5 and 1e-4 vs 1e-5) at 256k+256k before choosing.
