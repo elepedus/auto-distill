@@ -154,3 +154,15 @@ About 1.5 hours is deliberately unallocated.
   - The baseline diverged from a forward overflow (L3.a_mix nonfinite; gains, scales and taps grow).
   - The prescale run had 91 overflow events, all skipped, and no divergence. It may have been lucky.
   - A stabiliser agent is deriving parameter bounds (`--bound`) so the forward can't overflow by construction.
+- 2026-11-24 00:10. **`--bound`** (6d0b2c3, `results/forward-bounds-2026-11-24.md`) clamps the float
+  parameters after each Adam step.
+  - What grows is the per-row scales (0.077 → 0.2–0.45). The forward is a product chain, quartic in the scales
+    in the conv mixer and cubic in SwiGLU, and the residual reached 3e4.
+  - Strict worst-case bounds are infeasible: they'd need s ≤ 0.0155, below init. So the caps are practical,
+    using a row-sum factor alpha·D with alpha 0.1, which is not a proof.
+  - P=1 at 512k, seeds 0–2: no divergence; KL 4.36, 4.50 and 4.24 (unbounded: 5.13). The cap on o's scale
+    binds everywhere.
+  - Attention's `e @ (V·2^8)` is still unbounded in the worst case.
+  - PBT-8 with prescale: best 3.36 at 768k, 4 divergences replaced, 222 overflow events.
+  - **Queue (ane3):** prescale seeds 1–2, bound+prescale seeds 0–2, base seeds 1–2, then a long run of 8.2M
+    tokens with whichever wins. GPU: tern-def seeds 1–2, then tern-def-long (8.2M).
