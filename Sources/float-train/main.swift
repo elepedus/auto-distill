@@ -23,6 +23,9 @@ let hyp = (option("hyper") ?? "2e-3,16,1000,1").split(separator: ",").map { Floa
 let lr = ternary ? hyp[0] : Float(option("lr") ?? "1e-3")!, theta = hyp[1], tau = hyp[2], rhoScale = hyp[3], beta2: Float = 0.95
 let seed = Int(option("seed") ?? "0")!, evalCount = Int(option("eval") ?? "8")!
 let updates = tokenBudget / T
+// On-policy data: lambda = fraction of each pool refill that the student writes (teacher scores it).
+func pair(_ name: String) -> (Float, Float)? { option(name).map { let a = $0.split(separator: ",").map { Float($0)! }; return (a[0], a[1]) } }
+let opConst = Float(option("onpolicy-const") ?? "0")!, opFrom = Float(option("onpolicy-from") ?? "0")!, opRamp = pair("onpolicy-ramp"), opAlpha = pair("onpolicy-alpha")
 
 let jsonl = option("jsonl").flatMap { path -> FileHandle? in
     if !FileManager.default.fileExists(atPath: path) { FileManager.default.createFile(atPath: path, contents: nil) }
@@ -119,9 +122,45 @@ func logits(_ p: [MLXArray], _ tokens: MLXArray) -> MLXArray {
     }
     return matmul(MLXFast.rmsNorm(h, weight: p[1], eps: eps), p[0].T)
 }
-func klLoss(_ p: [MLXArray], _ tokens: MLXArray, _ target: MLXArray) -> MLXArray {
+/// [KL(teacher || student), alpha = sum_v min(p, q) = 1 - TV], both averaged over positions; alpha carries no gradient.
+func klLoss(_ p: [MLXArray], _ tokens: MLXArray, _ target: MLXArray) -> [MLXArray] {
     let s = logSoftmax(logits(p, tokens), axis: -1)
-    return (exp(target) * (target - s)).sum(axis: -1).mean()  // KL(teacher || student), mean over tokens
+    return [(exp(target) * (target - s)).sum(axis: -1).mean(), stopGradient(minimum(exp(target), exp(s)).sum(axis: -1).mean())]
+}
+/// One cached decode step for B sequences: x [B] token ids at position t. Per layer, s1 holds the conv state [B, 2, D] (inputs at
+/// t-2, t-1) or the attention keys [B, H, t, hd]; s2 the attention values. Returns logits [B, V].
+func decodeStep(_ p: [MLXArray], _ x: MLXArray, _ s1: inout [MLXArray], _ s2: inout [MLXArray], t: Int) -> MLXArray {
+    let H = 4, hd = 64, eps: Float = 1e-5, B = x.dim(0)
+    func lin(_ x: MLXArray, _ w: MLXArray) -> MLXArray { matmul(x, w.T) }
+    var h = p[0][x], i = 2
+    for (l, attention) in [false, false, true, false].enumerated() {
+        let xn = MLXFast.rmsNorm(h, weight: p[i], eps: eps), ffnGain = p[i + 1]
+        let r: MLXArray
+        if attention {
+            func heads(_ z: MLXArray, _ gain: MLXArray?) -> MLXArray {
+                var z = z.reshaped(B, 1, H, hd)
+                if let gain { z = MLXFast.rmsNorm(z, weight: gain, eps: eps) }
+                return z.transposed(0, 2, 1, 3)
+            }
+            func rope(_ z: MLXArray) -> MLXArray { MLXFast.RoPE(z, dimensions: hd, traditional: false, base: 1e6, scale: 1, offset: t) }
+            let q = rope(heads(lin(xn, p[i + 2]), p[i + 6])), k = rope(heads(lin(xn, p[i + 3]), p[i + 7])), v = heads(lin(xn, p[i + 4]), nil)
+            s1[l] = t == 0 ? k : concatenated([s1[l], k], axis: 2); s2[l] = t == 0 ? v : concatenated([s2[l], v], axis: 2)
+            let o = MLXFast.scaledDotProductAttention(queries: q, keys: s1[l], values: s2[l], scale: 0.125, mask: .none)
+            r = lin(o.transposed(0, 2, 1, 3).reshaped(B, H * hd), p[i + 5])
+            i += 8
+        } else {
+            let bx = lin(xn, p[i + 2]) * lin(xn, p[i + 4]), s = s1[l]
+            let conv = s[0..., 0] * p[i + 6] + s[0..., 1] * p[i + 7] + bx * p[i + 8]
+            s1[l] = concatenated([s[0..., 1...], bx[0..., .newAxis, 0...]], axis: 1)
+            r = lin(lin(xn, p[i + 3]) * conv, p[i + 5])
+            i += 9
+        }
+        h = h + r
+        let hn = MLXFast.rmsNorm(h, weight: ffnGain, eps: eps)
+        h = h + lin(silu(lin(hn, p[i])) * lin(hn, p[i + 1]), p[i + 2])
+        i += 3
+    }
+    return matmul(MLXFast.rmsNorm(h, weight: p[1], eps: eps), p[0].T)
 }
 
 // Teacher and data, as ane-train.
@@ -144,13 +183,27 @@ let (teacher, _) = try await loadLLM("LiquidAI/LFM2-350M")
 @MainActor func teacherLogProbs(_ tokens: MLXArray) -> MLXArray {
     let t = logSoftmax(teacher(tokens[.newAxis], cache: nil)[0].asType(.float32), axis: -1); eval(t); return t
 }
+/// Teacher log-probs (fp32 logSoftmax, stored bf16) of given sequences, in chunks of 32: [32, T, V] stays under 2^31 elements.
+@MainActor func teacherScore(_ seqs: [[Int32]]) -> [MLXArray] {
+    stride(from: 0, to: seqs.count, by: 32).map { s in
+        let part = seqs[s ..< min(s + 32, seqs.count)]
+        let lp = logSoftmax(teacher(MLXArray(part.flatMap { $0 }, [part.count, T]), cache: nil).asType(.float32), axis: -1).asType(.bfloat16); eval(lp); return lp
+    }
+}
+/// Teacher NLL per token of tokens 1... under the teacher's own next-token log-probs [T, V] (position t predicts token t+1).
+func teacherNLL(_ target: MLXArray, _ tokens: MLXArray) -> Float {
+    -takeAlong(target[0 ..< T - 1], tokens[1...].asType(.int32)[0..., .newAxis], axis: -1).mean().item(Float.self)
+}
 MLXRandom.seed(424242)  // held-out set is independent of --seed
 let evalRaw = try generate(evalCount).tokens
 let evalSet = evalRaw.map { MLXArray($0) }
 let evalTargets = evalSet.map(teacherLogProbs)
+print(String(format: "teacher NLL on held-out teacher text (reference, ~entropy): %.3f nats/token", zip(evalTargets, evalSet).map { teacherNLL($0, $1) }.reduce(0, +) / Float(evalCount)))
 print("eval set checksum: \(evalRaw.flatMap { $0 }.reduce(0) { ($0 &* 31 &+ Int($1)) & 0xFFFF_FFFF }) (\(evalCount) sequences)")
 MLXRandom.seed(UInt64(seed))
-var pool: [([Int32], Int)] = [], poolSteps: [MLXArray] = []  // (tokens, index into each step's [pool, V] targets)
+// Pool entries: (tokens, group, index in group). A group is the decode-step targets (T arrays [n, V]) or a scored chunk [n, T, V].
+enum Targets { case steps([MLXArray]), chunk(MLXArray) }
+var pool: [([Int32], Int, Int)] = [], poolGroups: [Targets] = []
 let poolSize = Int(option("pool") ?? "256")!  // targets stay per step: one [pool, T, V] array would pass 2^31 elements (MLX indexing) at 128+
 
 var params = initParams(ternary: ternary)
@@ -187,26 +240,75 @@ var m = params.map { zeros(like: $0) }, v = m
 // a = params (49; ternary linears hold their scale [n]) + trits (0 or 28, fp32) + [tokens, target]; grads for all but the last two.
 let lossGrad = valueAndGrad({ (a: [MLXArray]) -> [MLXArray] in
     let p = Array(a[0 ..< 49]), trits = Array(a[49 ..< a.count - 2])
-    return [klLoss(trits.isEmpty ? (ste ? steQuantize(p) : p) : compose(p, trits), a[a.count - 2], a[a.count - 1])]
+    return klLoss(trits.isEmpty ? (ste ? steQuantize(p) : p) : compose(p, trits), a[a.count - 2], a[a.count - 1])
 }, argumentNumbers: Array(0 ..< params.count + tritState.count))
-@MainActor func evaluate() -> Float {
-    var total = MLXArray(Float(0))
-    for (tokens, target) in zip(evalSet, evalTargets) { total = total + klLoss(ternary ? compose(params, tritState.map(\.value)) : ste ? steQuantize(params) : params, tokens, target); eval(total) }
-    return (total / Float(evalSet.count)).item(Float.self)
+@MainActor func studentWeights() -> [MLXArray] { ternary ? compose(params, tritState.map(\.value)) : ste ? steQuantize(params) : params }
+/// Autoregressive samples (temperature 1, random first token, T tokens) from the current student; key != nil makes it reproducible
+/// and leaves the global RNG alone.
+@MainActor func studentGenerate(_ count: Int, key: MLXArray? = nil) -> [[Int32]] {
+    let p = studentWeights(), keys = key.map { MLXRandom.split(key: $0, into: T + 1) }
+    var x = MLXRandom.randInt(0 ..< V, [count], key: keys?[T]).asType(.int32), rows = [x]
+    var s1 = (0 ..< 4).map { kinds[$0] ? MLXArray.zeros([1]) : MLXArray.zeros([count, 2, D]) }, s2 = s1
+    for t in 0 ..< T - 1 {
+        x = categorical(decodeStep(p, x, &s1, &s2, t: t), key: keys?[t]).asType(.int32)
+        eval(x); rows.append(x)
+    }
+    let all = stacked(rows, axis: 1)
+    return (0 ..< count).map { all[$0].asArray(Int32.self) }
 }
-@MainActor func report(_ kl: Float, tokens: Int) {
+/// (kl, alpha) averaged over sequences.
+@MainActor func evaluate(_ seqs: [MLXArray], _ targets: [MLXArray]) -> (kl: Float, alpha: Float) {
+    var kl = MLXArray(Float(0)), a = kl
+    let p = studentWeights()
+    for (tokens, target) in zip(seqs, targets) { let r = klLoss(p, tokens, target); kl = kl + r[0]; a = a + r[1]; eval(kl, a) }
+    return (kl.item(Float.self) / Float(seqs.count), a.item(Float.self) / Float(seqs.count))
+}
+@MainActor func evaluate() -> (kl: Float, alpha: Float) { evaluate(evalSet, evalTargets) }
+@MainActor func report(_ held: (kl: Float, alpha: Float), tokens: Int) {
     let zeros = ste ? ",\"zeros\":\(zeroFraction(params))" : ""
-    emit("{\"type\":\"eval\",\"tokens\":\(tokens),\"member\":0,\"kl\":\(num(kl)),\"lr\":\(lr)\(zeros)}")
-    print(String(format: "eval at %d tokens: held-out kl %.3f  lr %.2e", tokens, kl, lr) + (ste ? String(format: "  zero trits %.3f", zeroFraction(params)) : ""))
+    // On-policy: the student writes evalCount sequences (fixed key), the teacher scores them.
+    let t0 = Date(), seqs = studentGenerate(evalCount, key: MLXRandom.key(7777))
+    let scored = teacherScore(seqs).flatMap { c in (0 ..< c.dim(0)).map { c[$0].asType(.float32) } }
+    let on = evaluate(seqs.map { MLXArray($0) }, scored)
+    let nll = zip(scored, seqs).map { teacherNLL($0, MLXArray($1)) }.reduce(0, +) / Float(evalCount)
+    emit("{\"type\":\"eval\",\"tokens\":\(tokens),\"member\":0,\"kl\":\(num(held.kl)),\"alpha\":\(num(held.alpha)),\"onpolicy_kl\":\(num(on.kl)),\"teacher_nll\":\(num(nll)),\"onpolicy_alpha\":\(num(on.alpha)),\"lr\":\(lr)\(zeros)}")
+    print(String(format: "eval at %d tokens: held-out kl %.3f alpha %.3f | on-policy kl %.3f teacher nll %.3f alpha %.3f (%.1fs)  lr %.2e", tokens, held.kl, held.alpha, on.kl, nll, on.alpha, Date().timeIntervalSince(t0), lr) + (ste ? String(format: "  zero trits %.3f", zeroFraction(params)) : ""))
 }
 
+if CommandLine.arguments.contains("--gentest") {  // cached decode == full forward? and student sampling speed
+    let p = studentWeights(), seq = studentGenerate(8)[0], tk = MLXArray(seq), full = logits(p, tk)
+    var s1 = (0 ..< 4).map { kinds[$0] ? MLXArray.zeros([1]) : MLXArray.zeros([1, 2, D]) }, s2 = s1, worst: Float = 0
+    for t in 0 ..< T { let l = decodeStep(p, tk[t ..< t + 1], &s1, &s2, t: t); worst = max(worst, abs(l[0] - full[t]).max().item(Float.self)) }
+    print("gentest: max |cached - full| logit \(worst)")
+    let t0 = Date(); _ = studentGenerate(256); print(String(format: "gentest: student sampling %.1f ms/seq at 256", 1000 * Date().timeIntervalSince(t0) / 256))
+    exit(0)
+}
 let started = Date()
 let warmup = max(1, updates / 20)
+var alphaWindow: [Float] = [], recentAlpha = 0.0
 var tokensSeen = 0, nextRound = roundTokens, recent = 0.0, recentCount = 0, flipsRecent: Float = 0, generation = 0.0, working = 0.0
 report(evaluate(), tokens: 0)
 for step in 1 ... updates {
-    if pool.isEmpty { let t0 = Date(); let g = try generate(poolSize, keep: true); poolSteps = g.steps; pool = (0 ..< poolSize).map { (g.tokens[$0], $0) }; generation += Date().timeIntervalSince(t0) }
-    let (poolTokens, i) = pool.removeLast(); let tokens = MLXArray(poolTokens), target = stacked(poolSteps.map { $0[i] }).asType(.float32)
+    if pool.isEmpty {
+        let t0 = Date()
+        let abar = alphaWindow.isEmpty ? 0 : alphaWindow.reduce(0, +) / Float(alphaWindow.count), tk = Float(tokensSeen)
+        func clamp01(_ x: Float) -> Float { min(1, max(0, x)) }
+        let lambda = opRamp.map { clamp01((tk - $0.0) / ($0.1 - $0.0)) } ?? opAlpha.map { clamp01((abar - $0.0) / ($0.1 - $0.0)) } ?? (tk >= opFrom ? opConst : 0)
+        let nStudent = Int((lambda * Float(poolSize)).rounded()), nTeacher = poolSize - nStudent
+        pool = []; poolGroups = []
+        if nTeacher > 0 { let g = try generate(nTeacher, keep: true); poolGroups.append(.steps(g.steps)); pool += (0 ..< nTeacher).map { (g.tokens[$0], 0, $0) } }
+        if nStudent > 0 {
+            let seqs = studentGenerate(nStudent), scored = teacherScore(seqs)
+            for (c, chunk) in scored.enumerated() { poolGroups.append(.chunk(chunk)); pool += (0 ..< chunk.dim(0)).map { (seqs[c * 32 + $0], poolGroups.count - 1, $0) } }
+        }
+        pool.shuffle()
+        generation += Date().timeIntervalSince(t0)
+        print(String(format: "pool refill at %d tokens: lambda %.3f (alpha-bar %.3f), %d student + %d teacher sequences, %.1fs", tokensSeen, lambda, abar, nStudent, nTeacher, Date().timeIntervalSince(t0)))
+        emit("{\"type\":\"refill\",\"tokens\":\(tokensSeen),\"lambda\":\(lambda),\"alpha_bar\":\(abar),\"student\":\(nStudent),\"teacher\":\(nTeacher)}")
+    }
+    let (poolTokens, g, i) = pool.removeLast(); let tokens = MLXArray(poolTokens)
+    let target: MLXArray
+    switch poolGroups[g] { case .steps(let s): target = stacked(s.map { $0[i] }).asType(.float32); case .chunk(let c): target = c[i].asType(.float32) }
     tokensSeen += T
     let t0 = Date()
     let (loss, grads) = lossGrad(params + tritState.map(\.value) + [tokens, target])
@@ -221,19 +323,21 @@ for step in 1 ... updates {
     }
     var moved = MLXArray(Float(0))
     for (j, t) in tritState.enumerated() { moved = moved + t.update(g: grads[params.count + j], rho: rhoNow, leak: 1 - 1 / tau, theta: theta, step: step) }
-    eval(params + m + v + [loss[0], moved] + tritState.map(\.acc))
+    var toEval: [MLXArray] = params + m + v; toEval += [loss[0], loss[1], moved]; toEval += tritState.map(\.acc)
+    eval(toEval)
     flipsRecent += moved.item(Float.self)
     working += Date().timeIntervalSince(t0)
     recent += Double(loss[0].item(Float.self)); recentCount += 1
+    let a = loss[1].item(Float.self); recentAlpha += Double(a); alphaWindow.append(a); if alphaWindow.count > 50 { alphaWindow.removeFirst() }
     if step % 25 == 0 || step == 1 {
         let kl = Float(recent / Double(recentCount))
         let flipsMean = flipsRecent / Float(recentCount)  // trits moved per update, as ane-train's flips
-        print(String(format: "update %5d  tokens %8d  train kl %.3f  flips %.0f  %.0f tok/s", step, tokensSeen, kl, flipsMean, Double(tokensSeen) / Date().timeIntervalSince(started)))
-        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":[\(num(kl))],\"flips\":[\(num(flipsMean))]}")
-        flipsRecent = 0; recent = 0; recentCount = 0
+        print(String(format: "update %5d  tokens %8d  train kl %.3f alpha %.3f  flips %.0f  %.0f tok/s", step, tokensSeen, kl, Float(recentAlpha / Double(recentCount)), flipsMean, Double(tokensSeen) / Date().timeIntervalSince(started)))
+        emit("{\"type\":\"train\",\"update\":\(step),\"tokens\":\(tokensSeen),\"kl\":[\(num(kl))],\"alpha\":[\(num(Float(recentAlpha / Double(recentCount))))],\"flips\":[\(num(flipsMean))]}")
+        flipsRecent = 0; recent = 0; recentCount = 0; recentAlpha = 0
     }
     if tokensSeen >= nextRound || step == updates { nextRound += roundTokens; report(evaluate(), tokens: tokensSeen) }
 }
-print(String(format: "teacher text generation %.1f ms per sequence", 1000 * generation / Double(tokensSeen / T)))
+print(String(format: "pool generation (teacher decode, student sampling, scoring) %.1f ms per sequence", 1000 * generation / Double(tokensSeen / T)))
 print(String(format: "throughput excluding text generation: %.0f tok/s per member, %.0f member-tok/s", Double(tokensSeen) / working, Double(tokensSeen) / working))
 emit("{\"type\":\"done\",\"tokens\":\(tokensSeen),\"seconds\":\(Date().timeIntervalSince(started))}")
