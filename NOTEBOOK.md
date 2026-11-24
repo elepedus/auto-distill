@@ -416,3 +416,18 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
     colscales fold into the C/v/w3 rows. Zero inference overhead.
   - **The ANE's role on this machine:** concurrency (student or writer beside the GPU teacher) and efficiency, not
     peak speed.
+- 2026-11-24 22:40. **B4: exact 2-bit GPU export** (`ternary-export`, `results/gpu-ternary-infer-2026-11-24.md`).
+  - **Exactness:** MLX's dequantized() of all 92 linears equals trits·bf16(scale), with 0 mismatches.
+  - **Colscale folding is exact.** Untied colscales abort.
+  - **Parity:** KL 0.004–0.005 per token against fp32 TernaryLinear (bf16 floor 0.002–0.004).
+  - **Quiet benchmark:**
+
+    | model | prefill B1 / B8 tok/s | decode tok/s | size |
+    |---|---|---|---|
+    | bf16 | 10.4k / 13.0k | 262 | 709 MB |
+    | ternary 2-bit | 4.6k / 10.1k | **441** (1.7×) | 224 MB |
+    | MLX 4-bit | 8.5k / 9.6k | 397 | 200 MB |
+
+    A 4-bit embedding costs KL 0.47, so the embedding stays bf16; it is most of the 224 MB.
+  - **Plan adjustment.** The 8.2M baseline runs at only ~413 tok/s while agents share the GPU, so it can't finish
+    before Phase C. At D1 it gets stopped wherever it is, and the final run gets the GPU alone.
