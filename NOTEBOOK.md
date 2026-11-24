@@ -311,3 +311,17 @@ About 1.5 hours is deliberately unallocated.
     - Ternarise LFM2-350M (absmean vs TWN, optionally keeping the first and last layers in fp).
     - Recover with TTF from a zero accumulator vs one initialised from the rounding residual.
     - fp32-master STE as an upper-bound reference only.
+- 2026-11-24 15:20. **Aim restated by the user: training as accessible as inference, with a constant overhead; then
+  make inference fast by fitting the architecture to the device.**
+  - **Flywheel.** Faster inference gives a faster teacher and student, which gives faster training. Teacher decoding is
+    34.5 of ~75 ms per sequence.
+  - **Pieces we have:**
+    - per-layer fused gradient → update on the ANE, so no full-model gradient;
+    - population sharing one teacher pass.
+  - **Pieces to build:**
+    - lean or stateless TTF (agent queued);
+    - layer-by-layer training to bound activations;
+    - a converted model as a fast ANE writer while the exact teacher scores on the GPU concurrently, so a step costs
+      max(GPU, ANE), not the sum;
+    - 2-bit palettised weights on the ANE for decode bandwidth (needs a compile-to-disk path; untested).
+  - **Queue on the machine lock:** on-policy objective (running) → ternarise → lean TTF.
