@@ -502,3 +502,13 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
 - 2026-11-25 02:45. **B** (ρ×0.1): 0.789 at 3.33M → 0.763 at 4.35M. **C** (ρ×0.2): tied with B (0.767 at 4.10M).
   Both show 0 flips, so trits are frozen at ρ ≤ 0.2. C was replaced by **D** (ρ×0.35, from B's 4.10M
   checkpoint) to test whether modest trit movement helps.
+- 2026-11-25 03:45. **D wins** (ρ×0.35, ~65–70 flips per update): 0.710 at 6.40M vs B's 0.737 (B, with frozen trits,
+  flattened at ~0.74). Modest trit movement helps; heavy flipping (ρ×0.5, ~3k per update) hurts.
+  - **The final run is now D alone**, resumed from its 6.14M checkpoint with --tokens 16.5M (WSD decay from 14.0M),
+    ending ~06:25. A backup copy of the 6.14M checkpoint is kept.
+  - **The export pipeline works on a trained checkpoint (6.14M):** 0 dequantization mismatches; exported vs fp32
+    ternary KL 0.00023/token.
+  - **ANE parity:** KL 1e-5, argmax 100%, no overflow (max |y| 5.6), 4.0k tok/s prefill.
+  - **Caveat:** on wikitext, KL against the base is **1.87** (argmax 30%), against ~0.72 on held-out teacher text.
+    Training text (teacher samples from a random first token, T=1) covers natural text poorly, so wikitext perplexity
+    is the honest headline metric.
