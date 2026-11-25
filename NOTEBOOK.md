@@ -457,3 +457,23 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
     Mean per-layer relative MSE 0.084 at 96k → 0.051 at 1M, still falling.
   - **D1, provisional:** the final run gets a layerwise phase of ~3M tokens, then e2e with WSD. Screening the float
     Adam lr (3e-5 and 1e-4 vs 1e-5) at 256k+256k before choosing.
+- 2026-11-25 00:15. **Float lr screen** (layerwise 256k, then e2e 256k; handover KL → final KL):
+
+  | lr | handover | final |
+  |---|---|---|
+  | 3e-5 | 2.627 | 1.183 |
+  | 1e-4 | 2.291 | **1.070** |
+  | 3e-4 | **2.027** | 1.282 |
+  | 1e-3 | 2.129 | 2.000 |
+
+  The layerwise phase prefers 3e-4 and e2e prefers 1e-4, so `--layerwise-lr` was added (4e32d4d).
+- **D1, final recipe:**
+  - TWN init, residual accumulator init, fp32 accumulators;
+  - TTF θ32 τ1000 ρ×0.5;
+  - layerwise 3.07M tokens at float lr 3e-4, then e2e 18M tokens at 1e-4 with WSD (decay over the last 15%);
+  - eval every 1.02M tokens, perplexity every 4.1M, checkpoint every 2.05M;
+  - pure ternary: every decoder linear, no colscale, embedding and norms bf16/fp32. It exports exactly to MLX
+    2-bit for GPU decode, and runs on the ANE via ane-infer.
+
+  Expect ~5.8 h, ending ~06:00. If it runs slow: resume with a smaller --tokens to bring the decay forward, and
+  --layerwise 0.
