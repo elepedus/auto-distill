@@ -2,6 +2,7 @@
 //   ternarise measure [--init absmean|twn] [--keep-fp 0,15|all] [--text FILE] [--eval 8] [--jsonl PATH]
 //   ternarise train   [measure options] [--ste] [--tokens 2048000] [--round 256000] [--seed 0] [--lr 1e-5]
 //                     [--save DIR --save-every N --resume DIR --schedule cosine|wsd --decay-frac 0.15 --acc fp32|int8]
+//                     [--layerwise TOKENS --layerwise-lr LR] (on --resume pass --layerwise 0: the phase is not checkpointed)
 //                     [--hyper lr,theta,tau,rho] [--acc-init zero|residual] [--kappa 1] [--pool 256] [--ppl-every 1024000]
 //                     [--colscale [--untied]] [--layerwise TOKENS]
 // --colscale: W ~ diag(r) T diag(c), c per input channel (alternating-minimisation init, Adam-trained). --layerwise: before the
@@ -135,6 +136,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
     let ste = CommandLine.arguments.contains("--ste"), twn = (option("init") ?? "absmean") == "twn"
     let hyp = (option("hyper") ?? "1e-5,16,1000,0.25").split(separator: ",").map { Float($0)! }
     let lr = option("lr").map { Float($0)! } ?? hyp[0], theta = hyp[1], tau = hyp[2], rhoScale = hyp[3]
+    let lwLR = option("layerwise-lr").map { Float($0)! } ?? lr  // the layerwise phase may want a different Adam rate
     let residual = (option("acc-init") ?? "zero") == "residual", kappa = Float(option("kappa") ?? "1")!
     let colscale = CommandLine.arguments.contains("--colscale"), untied = CommandLine.arguments.contains("--untied"), lwTokens = Int(option("layerwise") ?? "0")!
     let evalCount = Int(option("eval") ?? "8")!, seed = Int(option("seed") ?? "0")!
@@ -358,7 +360,7 @@ func klLoss(_ model: any LLMModel, _ tokens: MLXArray, _ target: MLXArray) -> [M
             let (loss, grads) = lwGrad(student, [tokens] + outs)
             let cosine = 0.5 * (1 + cos(Float.pi * max(0, Float(step - warmup)) / Float(max(1, n - warmup))))
             let rhoNow = (step < warmup ? 0.25 + 0.75 * Float(step) / Float(warmup) : 0.2 + 0.8 * cosine) * rhoScale
-            let rate = lr * (step < warmup ? Float(step) / Float(warmup) : 0.1 + 0.9 * cosine)
+            let rate = lwLR * (step < warmup ? Float(step) / Float(warmup) : 0.1 + 0.9 * cosine)
             let b1 = pow(0.9, Float(step)), b2 = pow(0.999, Float(step))
             let current = Dictionary(uniqueKeysWithValues: student.trainableParameters().flattened())
             var fresh: [(String, MLXArray)] = [], moved = MLXArray(Float(0)), toEval: [MLXArray] = [loss[0], loss[1]]
