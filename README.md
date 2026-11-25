@@ -91,6 +91,47 @@ How the layer is built for the ANE:
 - **Constants are inputs.** Several `BLOBFILE` constants in one in-memory MIL program fail to load
   (`verifyBundleAtPath: invalid model`) on macOS 27.2.1; a single one works.
 
+## `ternarise`: ternary LFM2-350M, distilled from its own base
+
+```sh
+swift run -c release ternarise train --init twn --acc-init residual --hyper 1e-4,32,1000,0.5 --tokens 16500000 \
+  --layerwise 3072000 --layerwise-lr 3e-4 --schedule wsd --decay-frac 0.15 --save DIR --save-every 2048000 [--resume DIR --layerwise 0]
+```
+
+Replaces every decoder linear of LFM2-350M with trits x per-row scale and recovers it against the bf16 base (self-generated text, full-vocabulary KL).
+Trits are trained by TTF (no master weights); everything else by Adam. Other flags: `--layerwise TOKENS` (per-layer reconstruction before
+end-to-end training; `--layerwise-lr` sets its float lr; pass `--layerwise 0` on `--resume`), `--colscale [--untied]` (input-channel scales; no gain),
+`--save DIR --save-every N` / `--resume DIR` (resumable checkpoints), `--schedule cosine|wsd --decay-frac F`, `--acc fp32|int8`,
+`--ste` (fp32-master reference), `--profile`, `--jsonl PATH`.
+
+Night 2 (2026-11-25): layerwise reconstruction (3.07M tokens) then 16.5M e2e tokens, about 5.5 h, took wikitext-2 perplexity from 32,355 (TWN) / 456
+(yesterday's 2.05M run) to **123.5** (base 32.37; MLX 4-bit 38.0), held-out KL 0.652. Exported as exact MLX 2-bit: 224 MB, decode 500 tok/s
+against 179 for bf16. Receipts: [`results/ternarise-night2-2026-11-25.md`](results/ternarise-night2-2026-11-25.md),
+[`results/ternarise-2026-11-24.md`](results/ternarise-2026-11-24.md).
+
+## `ternary-export`: exact MLX 2-bit export and GPU benchmark
+
+```sh
+ternary-export export CKPT OUT [--embed-bits 4]   # ternarise checkpoint -> MLX 2-bit affine model (loads in mlx-swift-lm as is)
+ternary-export parity CKPT MODEL [--seqs 4]       # exported model vs fp32 trits x scale
+ternary-export bench MODEL [--reps 3]             # prefill (B1, B8) and decode tok/s
+ternary-export quant4 OUT                         # MLX 4-bit of the base, for reference
+```
+
+Ternary is exactly 2-bit affine (q = t+1, scale = s, bias = -s), so the export is lossless apart from storing the row scale in bf16 (0 dequantization
+mismatches). Tied column scales fold into the norms and neighbouring rows. Receipt: [`results/gpu-ternary-infer-2026-11-24.md`](results/gpu-ternary-infer-2026-11-24.md).
+
+## `ane-infer`: the ternary LFM2-350M on the ANE
+
+```sh
+ane-infer [--ckpt DIR] [--text FILE] [--seqs 4] [--reps 20] [--decode-steps 128] [--no-decode]
+ane-infer write-ckpt DIR [--colscale]
+```
+
+Embedding on the GPU, 16 decoder layers on the ANE (chained zero-copy), head on the GPU; prefill and single-token decode programs. With the night-2 checkpoint:
+KL 0.00002 against the GPU ternary model, no overflow, 4.1k tok/s prefill, ~33 tok/s decode (dispatch-bound). The GPU is faster on this machine.
+Receipt: [`results/ane-infer-2026-11-24.md`](results/ane-infer-2026-11-24.md).
+
 ## `float-train`: the GPU reference
 
 ```sh
