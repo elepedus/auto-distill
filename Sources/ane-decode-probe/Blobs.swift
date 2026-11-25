@@ -12,7 +12,7 @@ let header = "program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-compon
                  "int32 gr = const()[name = string(\"gr\"), val = int32(1)];", "bool tf = const()[name = string(\"tf\"), val = bool(false)];", "bool tt = const()[name = string(\"tt\"), val = bool(true)];"]
     var files: [String: Data] = [:]
     let sharedFile = ProcessInfo.processInfo.environment["SHARED"] != nil
-    var body = Data(), pos = 64, count = 0
+    var chunks: [MILBlob.Chunk] = [], pos = 64
     var acc = ""
     var rng: UInt64 = 12345
     func rnd() -> UInt64 { rng = rng &* 6364136223846793005 &+ 1442695040888963407; return rng >> 33 }
@@ -22,12 +22,8 @@ let header = "program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-compon
         func blob(_ name: String, _ type: String, _ shape: String, _ payload: Data, _ el: MILBlob.Element, pad: Int = 0) throws {
             if sharedFile {  // one file, chunk headers at 64-aligned offsets
                 let offset = pos
-                var h = Data(count: 64)
-                func put(_ v: UInt64, _ w: Int, _ at: Int) { for b in 0 ..< w { h[at + b] = UInt8(truncatingIfNeeded: v >> (8 * b)) } }
-                put(0xdeadbeef, 4, 0); put(UInt64(el.rawValue), 4, 4); put(UInt64(payload.count), 8, 8); put(UInt64(offset + 64), 8, 16); put(UInt64(pad), 8, 24)
-                var chunk = h; chunk.append(payload)
-                chunk.append(Data(count: (64 - chunk.count % 64) % 64))
-                body.append(chunk); pos += chunk.count; count += 1
+                chunks.append(MILBlob.Chunk(payload: payload, element: el, paddingBits: pad))
+                pos = MILBlob.nextOffset(after: offset, payloadCount: payload.count)
                 lines.append("tensor<\(type), \(shape)> \(name) = const()[name = string(\"\(name)\"), val = tensor<\(type), \(shape)>(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64(\(offset))))];")
                 return
             }
@@ -67,8 +63,7 @@ let header = "program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-compon
         if i == 0 { acc = "y0" } else { lines.append("tensor<fp16, \(mm ? "[1, 1, 1, \(n)]" : "[1, \(n), 1, \(W)]")> a\(i) = add(x = \(acc), y = y\(i))[name = string(\"a\(i)\")];"); acc = "a\(i)" }
     }
     if sharedFile {
-        var h = Data(count: 64); h[0] = UInt8(count); h[4] = 2
-        files["weights/weight.bin"] = h + body
+        files["weights/weight.bin"] = try MILBlob.encode(chunks: chunks).data
     }
     lines.append("tensor<fp16, \(mm ? "[1, 1, 1, \(n)]" : "[1, \(n), 1, \(W)]")> y = identity(x = \(acc))[name = string(\"y\")];")
     let text = (buildInfo ? header : "program(1.3)\n{\n") + "    func main<ios18>(tensor<fp16, \(mm ? "[1, 1, 1, \(K)]" : "[1, \(K), 1, \(W)]")> x) {\n" + lines.map { "        " + $0 }.joined(separator: "\n") + "\n    } -> (y);\n}\n"

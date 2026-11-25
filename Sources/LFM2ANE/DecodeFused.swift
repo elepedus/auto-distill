@@ -103,7 +103,7 @@ public func fusedDecodeProgram(_ s: LFM2Shape, attention: [Bool], maxLength L: I
             let off = idx < 4 ? idx * D : 4 * D + (idx - 4) * FF
             return g.slice(wA!, begin: [0, li, off, 0], size: [1, 1, out, D])
         case .fp16, .fp16conv: return g.blobFP16(layers![li].trits[name]!.map { Float16($0) }, mode.conv ? [out, k, 1, 1] : [1, 1, out, k])
-        case .pal2, .pal2conv: return g.lutToDense(indices: g.blob(pack2(layers![li].trits[name]!), element: 10, type: "uint2", shape: mode.conv ? [out, k, 1, 1] : [1, 1, out, k]), lut: lut!)
+        case .pal2, .pal2conv: return g.lutToDense(indices: g.blob(pack2(layers![li].trits[name]!), element: .uint2, type: "uint2", shape: mode.conv ? [out, k, 1, 1] : [1, 1, out, k]), lut: lut!)
         }
     }
     func linear(_ li: Int, _ x: V, _ name: String, out: Int) -> V {

@@ -65,23 +65,19 @@ final class MILText {
         return op("concat", "axis = \(scalar("int32", "\(axis)")), interleave = \(scalar("bool", "false")), values = (\(xs.map(\.name).joined(separator: ", ")))", shape)
     }
 
-    // BLOBFILE constants. Several separate weight files in one in-memory program fail to load ("verifyBundleAtPath: invalid model");
-    // one file holding every blob at its own 64-byte-aligned chunk offset works, so all constants share weights/weight.bin.
-    private var blobBody = Data(), blobPos = 64, blobCount = 0
+    // BLOBFILE constants all share one weight file (one file per constant fails to load; swift-ane Studies/MultiChunkBlobs.md).
+    private var chunks: [MILBlob.Chunk] = [], chunkOffsets: [Int] = [], blobPos = 64
     /// A constant tensor stored in the shared weight file. `payload` is the raw element bytes (fp16 little-endian, or packed uint2 ...).
-    func blob(_ payload: Data, element: UInt32, type: String, shape: [Int]) -> V {
+    func blob(_ payload: Data, element: MILBlob.Element, type: String, shape: [Int]) -> V {
         let n = fresh(), offset = blobPos
-        var h = Data(count: 64)
-        func put(_ v: UInt64, _ w: Int, _ at: Int) { for b in 0 ..< w { h[at + b] = UInt8(truncatingIfNeeded: v >> (8 * b)) } }
-        put(0xdeadbeef, 4, 0); put(UInt64(element), 4, 4); put(UInt64(payload.count), 8, 8); put(UInt64(offset + 64), 8, 16)
-        blobBody.append(h); blobBody.append(payload); blobBody.append(Data(count: (64 - payload.count % 64) % 64))
-        blobPos = offset + 64 + payload.count + (64 - payload.count % 64) % 64; blobCount += 1
+        chunks.append(MILBlob.Chunk(payload: payload, element: element)); chunkOffsets.append(offset)
+        blobPos = MILBlob.nextOffset(after: offset, payloadCount: payload.count)
         let t = "tensor<\(type), \(Self.dims(shape))>"
         lines.append("\(t) \(n) = const()[name = string(\"\(n)\"), val = \(t)(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64(\(offset))))];")
         return V(name: n, shape: shape)
     }
     func blobFP16(_ values: [Float16], _ shape: [Int]) -> V {
-        blob(values.withUnsafeBytes { Data($0) }, element: 1, type: "fp16", shape: shape)
+        blob(values.withUnsafeBytes { Data($0) }, element: .float16, type: "fp16", shape: shape)
     }
     private var convConsts: (pad: String, strides: String, pads: String, dilations: String, groups: String)?
     /// 1x1 convolution: x [1,K,1,1], w [N,K,1,1] -> [1,N,1,1]. On the ANE a constexpr weight takes the native palette path only through conv, not matmul.
@@ -99,9 +95,10 @@ final class MILText {
         let text = "program(1.3)\n{\n    func main<ios18>(\(signature.joined(separator: ", "))) {\n"
             + lines.map { "        " + $0 }.joined(separator: "\n")
             + "\n    } -> (\(outputs.map(\.name).joined(separator: ", ")));\n}\n"
-        guard blobCount > 0 else { return try Program(mil: text) }
-        var file = Data(count: 64); file[0] = UInt8(blobCount & 255); file[1] = UInt8(blobCount >> 8); file[4] = 2
-        return try Program(mil: text, weights: ["weights/weight.bin": file + blobBody])
+        guard !chunks.isEmpty else { return try Program(mil: text) }
+        let (file, offsets) = try MILBlob.encode(chunks: chunks)
+        precondition(offsets == chunkOffsets, "MIL text and weight file disagree on BLOBFILE offsets")
+        return try Program(mil: text, weights: ["weights/weight.bin": file])
     }
 }
 
