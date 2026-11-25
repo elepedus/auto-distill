@@ -41,6 +41,7 @@ func time(_ model: Model, reps: Int = 200) throws -> (median: Double, wall: Doub
 }
 
 let mode = CommandLine.arguments.dropFirst().first ?? "floor"
+if mode == "blobs" { runBlobs(CommandLine.arguments.count > 2 ? [CommandLine.arguments[2]] : ["fp16", "pal2", "pal2t", "int8"]) }
 if mode == "floor" {
     // 1 MB unit = 512 rows of K=1024 fp16
     for (m, n) in [(1, 16), (1, 512), (1, 2048), (4, 2048), (9, 2048), (16, 2048), (2, 512), (4, 512), (8, 512), (16, 512), (30, 512), (31, 512), (32, 512), (33, 512), (1, 8192), (2, 8192), (4, 8192), (8, 8192)] {
