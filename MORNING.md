@@ -1,105 +1,100 @@
-# Morning brief: 2026-11-24
+# Morning brief: 2026-11-25
 
-Overnight session, 20:40–08:00 GMT. The detailed record is in [NOTEBOOK.md](NOTEBOOK.md) (Entries), and the main
-receipt is [results/ane-vs-gpu-2026-11-24.md](results/ane-vs-gpu-2026-11-24.md).
+Night 2 (22:00–08:00 GMT). The goal was the best possible recovery of LFM2-350M as a ternary, device-aligned
+model, with training and inference co-optimised for this Mac. The detailed record is in [NOTEBOOK.md](NOTEBOOK.md)
+(the "Night 2 plan" section and its Entries). The receipt is
+[results/ternarise-night2-2026-11-25.md](results/ternarise-night2-2026-11-25.md). The previous brief is in
+[results/morning-2026-11-24.md](results/morning-2026-11-24.md).
 
-## TL;DR
+## Result
 
-- **Ternary training on the ANE now matches the same model trained on the GPU with fp32 gradients, at equal
-  tokens.**
+LFM2-350M with **every decoder linear ternary** (trits × per-row scale), recovered by distillation against its own
+bf16 base with no dataset. Training used TTF, with no master weights.
 
-  | budget | ANE, `--bound` | ANE, `--bound --grad-prescale` | GPU ternary TTF, fp32 |
-  |---|---|---|---|
-  | 2.05M tokens, 3 seeds | 2.218 ± 0.05 | 2.245 ± 0.04 | 2.286 ± 0.13 |
-  | 8.2M tokens | | 1.794 / 1.716 | 1.832 / 1.811 |
+| model | wikitext-2 perplexity | KL vs base (wikitext) | weights | GPU decode tok/s |
+|---|---|---|---|---|
+| bf16 base | 32.4 | 0 | 709 MB | 179 (noisy, 134–237) |
+| MLX 4-bit of the base | 38.0 | 0.20 | 200 MB | 533 |
+| ternary, untrained (TWN) | 32,355 | ~6.5 | 224 MB | 500 |
+| ternary, yesterday's recovery (2.05M tokens) | 456 | | 224 MB | 500 |
+| **ternary, tonight (3.07M layerwise + 16.5M e2e tokens)** | **123.5** | 1.80 | **224 MB** | **500** |
 
-  Held-out KL against LFM2-350M, on a fixed eval set.
-- **Yesterday's ANE numbers were wrong.** P=1 at 7.4–9.9 and PBT at 2.5–2.7 came from a bug, not from the
-  limits of fp16 or ternary.
-  - Layer 0's scale, gain and tap gradients (ds/dg/dk) overflowed, and the finite check never looked at them, so
-    infs went into Adam.
-  - The overflows the check did catch kept halving the loss scale, so the weight gradients underflowed.
-  - On identical settings, the fixed trainer goes from 9.35 to 5.40 at 256k tokens.
-- **Next, the forward overflowed: per-row scales grow 3–6×**, and the forward is a product chain of them.
-  - `--bound` clamps the float parameters after each Adam step. Without it, 3 of 4 runs diverged; with it, 0 of 7
-    did.
-  - The bound is practical, not a worst-case proof: the worst-case bounds are below the init values.
-- **Float fp32 leads ternary by ~0.2 nats at 8.2M tokens** (1.607 / 1.555 vs ~1.82). At 2.05M tokens there
-  was no gap. This is the first sign that ternary capacity matters at d 256.
-- **PBT-8 adds little at 2.05M tokens:** 2.172 vs 2.16–2.25 for P=1. Its value tonight was robustness: it
-  replaces diverged members.
+- **Recovered: 32,355 → 123.5 perplexity. Not recovered: 123.5 against a base of 32.4.** It's a big step from
+  yesterday, but still a long way from the base, and well behind 4-bit (38.0).
+- **Deployable and exact.** `ternary-export` writes a standard MLX 2-bit model with zero dequantization
+  mismatches. Its perplexity through the normal load path is 123.57, matching training.
+- **Fast on this Mac's GPU.** Decode is 2.8× faster than bf16, at a third of the size. 4-bit is just as fast,
+  because the bf16 embedding dominates the ternary file.
+- **The same model runs on the ANE:**
+  - parity KL 0.00002 against the GPU, no overflow (max activation 5.6);
+  - prefill 4.1k tok/s;
+  - decode only ~33 tok/s, because each of 16 single-layer programs pays a dispatch cost.
+- **On this M2 Max the GPU is the faster inference device.** The ANE's value here is concurrency and efficiency.
 
-## What ran
+## What we learned tonight
 
-| phase | result |
+1. **Layerwise reconstruction is the big lever.** First train each ternary layer to reproduce the base layer's
+   output from the base's input, then train end to end.
+
+   | layerwise tokens (then 512k end to end) | KL | perplexity |
+   |---|---|---|
+   | 0 | 1.898 | 1095 |
+   | 256k | 1.138 | 305 |
+   | 1M | 0.903 | 208 |
+   | 3.07M (tonight's handover, before any end-to-end) | 1.099 | 329 |
+
+   It needs one layer of memory and one shared teacher pass, which suits big models and the ANE.
+2. **The two phases want different float rates.** Layerwise works best at 3e-4; end to end at 1e-4 early and
+   3e-5 on the long plateau. Added `--layerwise-lr`.
+3. **After a good init, trit flipping must be gentle.**
+   - At peak ρ×0.5 (~3k flips per update), held-out KL rose 0.87 → 0.94 on the plateau.
+   - At ρ×0.1–0.2 the trits froze, and only the floats learnt; that plateaued at ~0.74.
+   - At ρ×0.35 (~65 flips per update) it beat frozen trits by ~0.02–0.03 and kept improving.
+   - The flip rate should be a controlled target, not a side effect of ρ and θ.
+4. **Don't cool early.** A cosine schedule over 8.2M tokens was at 1.012 / perplexity 265 when stopped at 2.05M.
+   A cosine run over 2.05M ended at 1.248 / 456. WSD with resumable checkpoints made it possible to change course
+   mid-run.
+5. **Two-sided (row × column) scales: no gain.** Dropped. Kept as an option: tied per shared input, they fold into
+   norm gains at zero inference cost.
+6. **The main remaining gap is data coverage, not the ternary format.** On held-out teacher text the KL is ~0.65;
+   on wikitext it's 1.75–1.87. The teacher's own samples, from a random first token, cover natural text poorly.
+
+## What ran (and what went wrong)
+
+| GMT | what |
 |---|---|
-| 0, tooling | `--seed`, `--hyper`, `--loss-scale`/`--fixed-scale`, `--eval`, `--jsonl`, gradient diagnostics, `scripts/run-queue.sh`. Also found that P=1 was broken (a kernel address-space bug, fixed in 7fd7052). |
-| 1, variance and loss scale | Cut short once the diagnostics showed the loss scale wasn't the real problem. A fixed scale of 2048 overflowed on 98% of updates. |
-| new | `float-train`: an fp32 MLX baseline of the same student, same pipeline and same eval. `--ternary` runs the same TTF with fp32 autodiff gradients. |
-| 2, numerics | Full finite check plus overflow attribution; `--grad-prescale` (per-tensor power-of-two factors in one runtime input); fixed eval set (seed 424242). |
-| 2b, forward | `--bound` (parameter caps derived from the forward's product chain). |
-| 3, comparisons | 3 seeds per arm at 2.05M tokens: GPU ternary, ANE bound, ANE bound+prescale. Prescale-only and neither diverged. PBT-8 with and without prescale. Long runs at 8.2M tokens: ANE, GPU ternary and GPU float. |
+| 22:00–23:45 | Four subagents. A1 added checkpoints, WSD, int8 accumulators and profiling. A2 added colscale and layerwise. A3 built ANE inference for the whole 350M model. B4 built the exact 2-bit GPU export and benchmark. |
+| 23:15–00:10 | Screens: layerwise size, float lr. |
+| 00:10–01:45 | Final run, part 1: layerwise 3.07M, then end to end. Held-out KL rose on the plateau, so I stopped it. |
+| 01:50–03:45 | Resumed probes from checkpoints (A, B, C, D) to fix ρ and lr. D won. |
+| 03:45–06:25 | D alone to 16.5M tokens, with WSD decay. |
+| 06:25–07:30 | Export, benchmarks on an idle GPU, ANE check, write-up. |
 
-An ANE job and a GPU job ran concurrently most of the night, so the wall-clock times of those runs are not
-throughput measurements. A clean throughput measurement ran at the end (What's next §3).
+- **The final model was assembled from a chain of resumed runs**, not one planned schedule.
+- **Everything is single-seed, with an 8-sequence held-out eval.** Wikitext perplexity is the honest headline.
+- **zsh word-splitting bit me again** while launching the probes; relaunched with literal arguments. ~5 min lost.
+- **The ternary inference speed-up is only on the GPU.** On the ANE the trits are still fp16, so there's no
+  bandwidth saving; Core ML-style palettisation is untested.
 
-## Mistakes and caveats (plainly)
+## Artifacts (local, git-ignored)
 
-- **Phase 0 lost an hour.** zsh doesn't word-split `$VAR`, so the subagent's "64k-token" tests ran as full 28-min
-  runs.
-- **A wrong call, corrected 25 minutes later.** At 23:00 I declared the gap to be "fp16 numerics". The
-  attribution run then showed it was the unchecked-overflow bug. Both entries are in the notebook.
-- **Runs are not bit-reproducible.** The same seed and binary diverge after the first round, probably from GPU
-  scatter-add atomics in the embedding gradient. Seed std is ~0.05–0.13 at 2.05M tokens.
-- **The evaluation is small.** It is an 8-sequence (2048-token) held-out set. PBT selects on the same set, which
-  gives it a slight optimistic bias.
-- **Bounds are incomplete.** The bound comes from an alpha·D row-sum estimate (alpha 0.1), and attention's
-  `e @ (V·2^8)` is still unbounded in the worst case. Overflow events still happen in backward outputs (28–93
-  per 2.05M-token run), and each one skips its sequence.
-- **Old receipts are superseded.** The receipts from yesterday (ane-ttf, ane-pbt8, ane-accum*) used the buggy
-  trainer and a seed-dependent eval set. The README marks them as superseded.
+- `artifacts/lfm2-350m-ternary-ckpt/`: resumable checkpoint (trits, scales, floats, optimiser state).
+- `artifacts/lfm2-350m-ternary-mlx2bit/`: the exported MLX 2-bit model. It loads with mlx-swift-lm like any
+  quantized model.
 
-## Decisions taken
+## Suggested next steps
 
-- **D1: P=1 variance is not the priority.** The ANE path was broken numerically, so its variance said nothing.
-  The machine time went to the float baseline and the numerics instead.
-- **Ternary capacity vs precision.** The float gap was more than 1 nat, so I built `float-train --ternary` to
-  separate the two. It showed precision wasn't the culprit; the bug was.
-- **`--bound` is the recommended setting.** `--grad-prescale` stays optional: it cuts gradient zeros (0.4 → 0.05
-  in the worst tensor) but buys no KL here.
-
-## What's next (suggested)
-
-1. **Make `--bound` the default.** Done on 2026-11-24 (`--no-bound` to disable). Still to do: replace the alpha estimate with a derivation that holds, or with per-layer
-   activation monitoring that tightens the caps. Bound attention's numerator.
-2. **Capacity.** At 8.2M tokens float wins by about 0.2 nats. Try a wider ternary student (d 384 or 512) on the
-   ANE. The population programs already handle width.
-3. **Speed: the GPU side is the bottleneck, not the ANE.** Measured at 05:45, one job at a time, 256k tokens,
-   excluding teacher text generation:
-
-   | path | throughput |
-   |---|---|
-   | ANE P=1 | 4239 tok/s |
-   | ANE P=8 | 11,455 member-tok/s |
-   | GPU ternary | 5500 tok/s |
-   | GPU fp32 | 5740 tok/s |
-
-   At P=1 the ANE trunk is only 9.9 ms of a 60 ms sequence. The rest is teacher scoring (24.6), Adam/TTF update
-   (11.0), head (7.9) and accumulation (6.9), all on the GPU. Text generation adds 30.5 ms per sequence on top.
-   Cheap wins: fuse the update and accumulation kernels, batch teacher generation, and use P>1 to amortise the
-   teacher.
-4. **PBT settings.** At P=1, PBT-8's winning settings (lr 2.27e-3, θ 15.4, τ 2947, ρ× 0.83) gave mean 2.152 against 2.218
-   for defaults over 3 seeds, with paired differences of −0.11, −0.09 and +0.00. That is suggestive, but PBT
-   selected them on the same eval set. Next: a larger held-out set (32+ sequences) for selection, a separate
-   one for reporting, and PBT over 8.2M tokens.
-5. **Back to the main goal.** Use the now-sound ANE student pipeline for dataset-free transfer into larger
-   ternary students, or return to the quantised-repair track (the 3-bit LFM2 repair, 56.6 → 49.8 perplexity).
-
-## Receipts
-
-- [results/ane-vs-gpu-2026-11-24.md](results/ane-vs-gpu-2026-11-24.md): all of tonight's runs, ablation, long
-  runs, caveats. The JSONL files are in [results/runs-2026-11-24/](results/runs-2026-11-24/).
-- [results/grad-numerics-2026-11-23.md](results/grad-numerics-2026-11-23.md): the overflow root cause and the
-  prescale design.
-- [results/forward-bounds-2026-11-24.md](results/forward-bounds-2026-11-24.md): what grows, the bound
-  derivation, the 512k checks.
+1. **Data coverage, the biggest lever left.** Have the teacher write from diverse prefixes: more varied starting
+   points, its own prompted continuations, or a lower temperature for part of each pool. Measure wikitext KL, not
+   just teacher-text KL.
+2. **Control the flip rate.** Make the flip rate per update the target and adapt ρ to hit it, together with
+   layerwise.
+3. **Longer layerwise, possibly interleaved.** Return to layerwise MSE periodically, or use it as an auxiliary loss
+   during end-to-end training.
+4. **Compress the embedding and head.** They are now most of the bytes, and a naive 4-bit embedding cost KL 0.47.
+   Train with it, or use a factorised or shared head.
+5. **Make the ANE path pay:**
+   - fuse layers into fewer programs for decode;
+   - run the ANE student or writer concurrently with the GPU teacher;
+   - try palettised 2-bit weights.
+6. **Toward the north star:** int8 accumulators (validated on the small model), packed trits, then a 1–2B model.

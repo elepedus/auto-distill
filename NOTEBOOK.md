@@ -512,3 +512,13 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
   - **Caveat:** on wikitext, KL against the base is **1.87** (argmax 30%), against ~0.72 on held-out teacher text.
     Training text (teacher samples from a random first token, T=1) covers natural text poorly, so wikitext perplexity
     is the honest headline metric.
+- 2026-11-25 07:00. **Night 2 final.**
+  - **Final model:** LFM2-350M, every decoder linear ternary. Chain: layerwise 3.07M → e2e 2.05M → B 4.10M →
+    D 6.14M → final-D 16.5M with WSD decay.
+  - **Held-out KL 0.652; wikitext perplexity 123.5** (start 32,355; yesterday 456; base 32.37; MLX 4-bit 38.0).
+  - **Exported MLX 2-bit:** exact, perplexity 123.57. Idle-GPU decode 500 tok/s vs bf16 179 (noisy) vs 4-bit 533;
+    224 MB.
+  - **ANE:** parity KL 2e-5, no overflow, prefill 4.1k tok/s, decode ~33 tok/s.
+  - **Artifacts** (git-ignored): artifacts/lfm2-350m-ternary-{ckpt,mlx2bit}.
+  - **Biggest remaining gap: data coverage.** Wikitext KL 1.80 vs teacher-text KL 0.65.
+  - MORNING.md written; yesterday's brief moved to results/morning-2026-11-24.md.
