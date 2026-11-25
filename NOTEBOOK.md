@@ -489,3 +489,13 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
   - **Action:** stopped the run. Resumed from the 2.05M e2e checkpoint (KL ~0.90) as two probes, A (ρ×0.1, float lr
     1e-4) and B (ρ×0.1, lr 3e-5). Eval every 256k. The winner continues as the final run.
   - (zsh word-splitting bit me again on the first launch; relaunched with literal arguments.)
+- 2026-11-25 02:15. **Probes after +1M tokens** (held-out KL, 2.05M → 3.07M):
+  - A (ρ×0.1, float lr 1e-4): 0.901 → 0.857 → 0.838 → 0.864 → 0.854.
+  - **B (ρ×0.1, lr 3e-5): 0.901 → 0.851 → 0.824 → 0.816 → 0.796.** Still falling.
+  - At ρ×0.1, flips are ~0: the trits are effectively frozen after layerwise, and the floats do the work. A lower
+    float lr is better on the plateau.
+  - Two concurrent runs give ~1.7k tok/s in total, against ~1.1k for one.
+  - **Now:** B continues. C (ρ×0.2, lr 3e-5, seed 1) starts from B's 3.07M checkpoint, to test whether some trit
+    movement helps.
+  - **Decision at ~04:15:** keep the better one alone, with the WSD decay ending by ~06:30. Resume with a smaller
+    --tokens if needed.
