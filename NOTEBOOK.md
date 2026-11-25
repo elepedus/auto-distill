@@ -481,3 +481,11 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
   - **Layerwise phase:** 3.07M tokens at float lr 3e-4, ~1.07k tok/s. Mean relative MSE fell to ~0.04. Handover
     KL **1.099**, perplexity **329** (the 1M screen at lr 1e-5 handed over at 1.426 / 576).
   - **End-to-end:** KL 0.872 at 1.02M tokens, 1073 tok/s. ETA ~05:40.
+- 2026-11-25 01:50. **Final run: KL rising on the WSD plateau** (held-out 0.872 at 1M, 0.901 at 2M, 0.938 at 3M).
+  - Train KL tracks the flip rate: lowest (0.58) while ρ was warming up with few flips, then ~0.70 once flips reached
+    ~3,000 per update at peak ρ (×0.5).
+  - After a good layerwise init, peak-ρ flip noise is destructive. The cosine screens never sat at peak long enough
+    to show it.
+  - **Action:** stopped the run. Resumed from the 2.05M e2e checkpoint (KL ~0.90) as two probes, A (ρ×0.1, float lr
+    1e-4) and B (ρ×0.1, lr 3e-5). Eval every 256k. The winner continues as the final run.
+  - (zsh word-splitting bit me again on the first launch; relaunched with literal arguments.)
