@@ -60,12 +60,41 @@ final class MILText {
     func slice(_ x: V, begin: [Int], size: [Int]) -> V { op("slice_by_size", "x = \(x.name), begin = \(ints(begin)), size = \(ints(size))", size) }
     func transpose(_ x: V, _ perm: [Int]) -> V { op("transpose", "perm = \(ints(perm)), x = \(x.name)", perm.map { x.shape[$0] }) }
     func output(_ x: V, _ name: String) -> V { op("identity", "x = \(x.name)", x.shape, as: name) }
+    func concat(_ xs: [V], axis: Int) -> V {
+        var shape = xs[0].shape; shape[axis] = xs.map { $0.shape[axis] }.reduce(0, +)
+        return op("concat", "axis = \(scalar("int32", "\(axis)")), interleave = \(scalar("bool", "false")), values = (\(xs.map(\.name).joined(separator: ", ")))", shape)
+    }
+
+    // BLOBFILE constants. Several separate weight files in one in-memory program fail to load ("verifyBundleAtPath: invalid model");
+    // one file holding every blob at its own 64-byte-aligned chunk offset works, so all constants share weights/weight.bin.
+    private var blobBody = Data(), blobPos = 64, blobCount = 0
+    /// A constant tensor stored in the shared weight file. `payload` is the raw element bytes (fp16 little-endian, or packed uint2 ...).
+    func blob(_ payload: Data, element: UInt32, type: String, shape: [Int]) -> V {
+        let n = fresh(), offset = blobPos
+        var h = Data(count: 64)
+        func put(_ v: UInt64, _ w: Int, _ at: Int) { for b in 0 ..< w { h[at + b] = UInt8(truncatingIfNeeded: v >> (8 * b)) } }
+        put(0xdeadbeef, 4, 0); put(UInt64(element), 4, 4); put(UInt64(payload.count), 8, 8); put(UInt64(offset + 64), 8, 16)
+        blobBody.append(h); blobBody.append(payload); blobBody.append(Data(count: (64 - payload.count % 64) % 64))
+        blobPos = offset + 64 + payload.count + (64 - payload.count % 64) % 64; blobCount += 1
+        let t = "tensor<\(type), \(Self.dims(shape))>"
+        lines.append("\(t) \(n) = const()[name = string(\"\(n)\"), val = \(t)(BLOBFILE(path = string(\"@model_path/weights/weight.bin\"), offset = uint64(\(offset))))];")
+        return V(name: n, shape: shape)
+    }
+    func blobFP16(_ values: [Float16], _ shape: [Int]) -> V {
+        blob(values.withUnsafeBytes { Data($0) }, element: 1, type: "fp16", shape: shape)
+    }
+    /// Dense fp16 weight from 2-bit indices (4 per byte, little-endian bit order) through one shared 4-entry lookup table.
+    func lutToDense(indices: V, lut: V) -> V {
+        op("constexpr_lut_to_dense", "indices = \(indices.name), lut = \(lut.name)", indices.shape)
+    }
 
     func program(outputs: [V]) throws -> Program {
         let text = "program(1.3)\n{\n    func main<ios18>(\(signature.joined(separator: ", "))) {\n"
             + lines.map { "        " + $0 }.joined(separator: "\n")
             + "\n    } -> (\(outputs.map(\.name).joined(separator: ", ")));\n}\n"
-        return try Program(mil: text)
+        guard blobCount > 0 else { return try Program(mil: text) }
+        var file = Data(count: 64); file[0] = UInt8(blobCount & 255); file[1] = UInt8(blobCount >> 8); file[4] = 2
+        return try Program(mil: text, weights: ["weights/weight.bin": file + blobBody])
     }
 }
 

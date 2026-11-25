@@ -209,7 +209,12 @@ let seqs = (0 ..< nseq).map { s -> MLXArray in MLXArray([Int32(tokenizer.bosToke
 
 // ---- Decode: one token per step, 16 single-token programs chained zero-copy; conv state and the K/V caches are updated by the host.
 let L = Int(option("max-len") ?? "512")!
-@MainActor final class Decoder {
+@MainActor protocol StepDecoder: AnyObject {
+    func step(_ token: Int) throws -> Double
+    func hidden() -> MLXArray
+    func reset()
+}
+@MainActor final class Decoder: StepDecoder {
     let xBuf = SharedBuffer([1, 1, 1, D]), onehot = SharedBuffer([1, 1, 1, L]), mask = SharedBuffer([1, 1, 1, L])
     let cosBuf = SharedBuffer([1, 1, 1, HD]), sinBuf = SharedBuffer([1, 1, 1, HD])
     var models: [Model] = [], kc: [SharedBuffer?] = [], vc: [SharedBuffer?] = [], s0: [SharedBuffer?] = [], s1: [SharedBuffer?] = []
@@ -281,10 +286,116 @@ let L = Int(option("max-len") ?? "512")!
     func hidden() -> MLXArray { view(out[15]["y"]!).asType(.float32).reshaped(1, D) }
 }
 
+// ---- Fused decode (--fuse k [--wmode input|fp16|pal2]): k consecutive layers per program, weights as packed inputs or constants.
+@MainActor func layerData(_ i: Int) -> LayerData {
+    let attention = attentionLayers.contains(i), pre = "model.layers.\(i)."
+    var tr: [String: [Int8]] = [:], sc: [String: [Float16]] = [:], sm: [String: [Float16]] = [:]
+    func add(_ name: String, _ path: String, rows: Range<Int>? = nil, gqa: Bool = false) {
+        let t = tern[pre + path]!
+        precondition(t.col == nil, "fused decode does not support colscale")
+        var w = t.trits, s = t.scale
+        if let rows { w = w[rows]; s = s[rows] }
+        if gqa { w = repeated(w.reshaped(8, 1, 64, D), count: 2, axis: 1).reshaped(D, D); s = repeated(s.reshaped(8, 1, 64), count: 2, axis: 1).reshaped(D) }
+        tr[name] = w.asType(.int8).asArray(Int8.self); sc[name] = s.asType(.float16).asArray(Float16.self)
+    }
+    func half(_ a: MLXArray) -> [Float16] { a.asType(.float16).asArray(Float16.self) }
+    if attention {
+        add("q", "self_attn.q_proj"); add("k", "self_attn.k_proj", gqa: true); add("v", "self_attn.v_proj", gqa: true); add("o", "self_attn.out_proj")
+        for n in ["q", "k"] { sm["g_\(n)"] = half(tiled(floats[pre + "self_attn.\(n)_layernorm.weight"]!, repetitions: [16])) }
+    } else {
+        for (j, n) in ["b", "c", "x"].enumerated() { add(n, "conv.in_proj", rows: (j * D) ..< ((j + 1) * D)) }
+        add("o", "conv.out_proj")
+        let k = floats[pre + "conv.conv.weight"]!
+        for j in 0 ..< 3 { sm["k\(j)"] = half(k[0..., j, 0]) }
+    }
+    add("w1", "feed_forward.w1"); add("w3", "feed_forward.w3"); add("w2", "feed_forward.w2")
+    sm["g_op"] = half(floats[pre + "operator_norm.weight"]!); sm["g_ffn"] = half(floats[pre + "ffn_norm.weight"]!)
+    return LayerData(trits: tr, scale: sc, small: sm)
+}
+
+@MainActor final class FusedDecoder: StepDecoder {
+    struct Group { let range: Range<Int>, model: Model, cst: SharedBuffer?, kc: SharedBuffer?, vc: SharedBuffer?, out: [String: SurfaceBinding], nConv: Int, nAttn: Int }
+    let xBuf = SharedBuffer([1, 1, 1, D]), onehot = SharedBuffer([1, 1, 1, L]), mask = SharedBuffer([1, 1, 1, L])
+    let cosBuf = SharedBuffer([1, 1, 1, HD]), sinBuf = SharedBuffer([1, 1, 1, HD])
+    var groups: [Group] = []
+    var pos = 0
+    let embed16: [Float16] = embed.asType(.float16).asArray(Float16.self)
+    init(k: Int, mode: WeightMode) throws {
+        var prev: Model?
+        for start in stride(from: 0, to: 16, by: k) {
+            let range = start ..< min(start + k, 16), attn = range.map { attentionLayers.contains($0) }
+            let data = range.map(layerData)
+            let (program, constants) = try fusedDecodeProgram(shape, attention: attn, maxLength: L, mode: mode, layers: mode == .input ? nil : data)
+            var b: [String: ExternalInputBinding] = ["x": prev == nil ? try xBuf.binding() : try link(prev!, "y")]
+            let nConv = attn.filter { !$0 }.count, nAttn = attn.count - nConv
+            var cst: SharedBuffer?, kc: SharedBuffer?, vc: SharedBuffer?
+            if nConv > 0 { cst = SharedBuffer([1, nConv, 2, D]); b["cst"] = try cst!.binding() }
+            if nAttn > 0 {
+                kc = SharedBuffer([1, nAttn * HEADS, L, HD]); vc = SharedBuffer([1, nAttn * HEADS, L, HD])
+                b["kc"] = try kc!.binding(); b["vc"] = try vc!.binding(); b["onehot"] = try onehot.binding(); b["mask"] = try mask.binding()
+                b["cos"] = try cosBuf.binding(); b["sin"] = try sinBuf.binding()
+            }
+            if mode == .input {
+                let p = packInputs(data, attention: attn, dim: D, ff: FF)
+                func put(_ name: String, _ shape: [Int], _ v: [Float16]) throws {
+                    let buf = SharedBuffer(shape); v.withUnsafeBytes { _ = memcpy(buf.pointer, $0.baseAddress!, $0.count) }; b[name] = try buf.binding()
+                }
+                try put("wA", [1, attn.count, 4 * D + 2 * FF, D], p.wA); try put("wB", [1, attn.count, D, FF], p.wB); try put("sm", [1, attn.count, fusedSmallRows, FF], p.sm)
+            }
+            let t0 = now()
+            let m = try Model(program: program, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 4 << 30), inputBindings: b)
+            _ = try m.prepareUpdating(inputs: constants)
+            print(String(format: "  group %@ compiled in %.1fs", "\(range)", now() - t0))
+            let names = ["y"] + (nConv > 0 ? ["ns"] : []) + (nAttn > 0 ? ["kn", "vn"] : [])
+            groups.append(Group(range: range, model: m, cst: cst, kc: kc, vc: vc, out: Dictionary(uniqueKeysWithValues: try names.map { ($0, try output(m, $0)) }), nConv: nConv, nAttn: nAttn))
+            prev = m
+        }
+        reset()
+    }
+    func reset() {
+        pos = 0
+        for g in groups { for b in [g.cst, g.kc, g.vc] { if let b { memset(b.pointer, 0, b.bytes) } } }
+        memset(onehot.pointer, 0, onehot.bytes)
+        let m = mask.pointer.assumingMemoryBound(to: Float16.self)
+        for j in 0 ..< L { m[j] = -30000 }
+    }
+    /// Copies planes x rows of a program output to dst (plane p, row r at dst + p * planeStride + r * rowStride).
+    func copy(_ b: SurfaceBinding, planes: Int, rows: Int, rowBytes: Int, to dst: UnsafeMutableRawPointer, planeStride: Int, rowStride: Int) {
+        let base = IOSurfaceGetBaseAddress(b.surface) + b.startOffset
+        for p in 0 ..< planes { for r in 0 ..< rows { memcpy(dst + p * planeStride + r * rowStride, base + p * b.layout.planeStride + r * b.layout.rowStride, rowBytes) } }
+    }
+    func step(_ token: Int) throws -> Double {
+        precondition(pos < L)
+        embed16.withUnsafeBytes { _ = memcpy(xBuf.pointer, $0.baseAddress! + token * D * 2, D * 2) }
+        let oh = onehot.pointer.assumingMemoryBound(to: Float16.self), m = mask.pointer.assumingMemoryBound(to: Float16.self)
+        if pos > 0 { oh[pos - 1] = 0 }
+        oh[pos] = 1; m[pos] = 0
+        let c = cosBuf.pointer.assumingMemoryBound(to: Float16.self), sn = sinBuf.pointer.assumingMemoryBound(to: Float16.self)
+        for i in 0 ..< HD {
+            let angle = Double(pos) * pow(Double(shape.ropeBase), -Double(2 * (i % (HD / 2))) / Double(HD))
+            c[i] = Float16(cos(angle)); sn[i] = Float16(sin(angle))
+        }
+        var total = 0.0
+        for g in groups {
+            total += try g.model.evaluatePrepared(readOutputs: false, poisonOutputs: false).elapsed
+            if let cst = g.cst { copy(g.out["ns"]!, planes: g.nConv, rows: 2, rowBytes: D * 2, to: cst.pointer, planeStride: 2 * D * 2, rowStride: D * 2) }
+            if let kc = g.kc, let vc = g.vc {
+                copy(g.out["kn"]!, planes: g.nAttn * HEADS, rows: 1, rowBytes: HD * 2, to: kc.pointer + pos * HD * 2, planeStride: L * HD * 2, rowStride: 0)
+                copy(g.out["vn"]!, planes: g.nAttn * HEADS, rows: 1, rowBytes: HD * 2, to: vc.pointer + pos * HD * 2, planeStride: L * HD * 2, rowStride: 0)
+            }
+        }
+        pos += 1
+        return total
+    }
+    func hidden() -> MLXArray { view(groups.last!.out["y"]!).asType(.float32).reshaped(1, D) }
+}
+
 @MainActor func runDecode() throws {
     print("# decode (single-token programs, max length \(L))")
     let t0 = now()
-    let dec = try Decoder()
+    let fuse = Int(option("fuse") ?? "0")!
+    let dec: any StepDecoder = fuse > 0 ? try FusedDecoder(k: fuse, mode: WeightMode(rawValue: option("wmode") ?? "input")!) : try Decoder()
+    print("decode mode: " + (fuse > 0 ? "fused k=\(fuse), weights \(option("wmode") ?? "input")" : "one program per layer, fp16 runtime inputs"))
     print(String(format: "compiled 16 decode programs in %.1fs", now() - t0))
     // Parity: teacher-forced, the decoder's logits at each position against the GPU ternary model's prefill logits.
     setMatDtype(.float32)
@@ -325,10 +436,11 @@ let L = Int(option("max-len") ?? "512")!
         return Double(steps) / (now() - t0)
     }
     setMatDtype(.bfloat16)
+    let noGpu = CommandLine.arguments.contains("--no-gpu-decode")
     for pass in 1 ... 2 {
         let (e2e, aneOnly) = try aneSpeed()
         print(String(format: "pass %d: ANE decode %.1f tok/s end to end (%.1f ms/token; layers only %.1f tok/s); GPU bf16 base %.1f tok/s; GPU ternary (bf16 matmuls) %.1f tok/s",
-                     pass, e2e, 1000 / e2e, aneOnly, try gpuSpeed(base), try gpuSpeed(gpuTern)))
+                     pass, e2e, 1000 / e2e, aneOnly, noGpu ? 0 : try gpuSpeed(base), noGpu ? 0 : try gpuSpeed(gpuTern)))
     }
 }
 
@@ -386,5 +498,5 @@ let L = Int(option("max-len") ?? "512")!
     print("(GPU numbers, second pass)")
     print(String(format: "GPU bf16 base: %.0f tok/s, GPU ternary: %.0f tok/s", gpuRate(base), gpuRate(gpuTern)))
 }
-try run()
+if !CommandLine.arguments.contains("--decode-only") { try run() }
 if !CommandLine.arguments.contains("--no-decode") { try runDecode() }
