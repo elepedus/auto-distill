@@ -477,3 +477,7 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
 
   Expect ~5.8 h, ending ~06:00. If it runs slow: resume with a smaller --tokens to bring the decay forward, and
   --layerwise 0.
+- 2026-11-25 01:12. **Final run, progress.**
+  - **Layerwise phase:** 3.07M tokens at float lr 3e-4, ~1.07k tok/s. Mean relative MSE fell to ~0.04. Handover
+    KL **1.099**, perplexity **329** (the 1M screen at lr 1e-5 handed over at 1.426 / 576).
+  - **End-to-end:** KL 0.872 at 1.02M tokens, 1073 tok/s. ETA ~05:40.
