@@ -499,3 +499,6 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
     movement helps.
   - **Decision at ~04:15:** keep the better one alone, with the WSD decay ending by ~06:30. Resume with a smaller
     --tokens if needed.
+- 2026-11-25 02:45. **B** (ρ×0.1): 0.789 at 3.33M → 0.763 at 4.35M. **C** (ρ×0.2): tied with B (0.767 at 4.10M).
+  Both show 0 flips, so trits are frozen at ρ ≤ 0.2. C was replaced by **D** (ρ×0.35, from B's 4.10M
+  checkpoint) to test whether modest trit movement helps.
