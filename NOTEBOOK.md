@@ -522,3 +522,19 @@ For each ternary linear `<path>.trits` (int8 [N,K]), `<path>.scale` (fp32 [N]) a
   - **Artifacts** (git-ignored): artifacts/lfm2-350m-ternary-{ckpt,mlx2bit}.
   - **Biggest remaining gap: data coverage.** Wikitext KL 1.80 vs teacher-text KL 0.65.
   - MORNING.md written; yesterday's brief moved to results/morning-2026-11-24.md.
+- 2026-11-25 08:30. **ANE decode diagnosed and sped up 6×** (`results/ane-decode-2026-11-25.md`).
+  - **Dispatch floor:** 0.12 ms per call.
+  - **fp16 runtime-input weights stream at ~27.5 GB/s.** The old 30.6 ms/token was ~21 ms weight streaming, so
+    fusing alone only reaches 43.5 tok/s.
+  - **Weight constants now work.** Several constants fail only when each sits in its own blob file. One file with
+    64-byte-aligned chunks loads 288 constants. That's a swift-ane packaging issue (`MILBlob.encode` writes one
+    chunk per file); worked around with `MILText.blob`, and the suggested swift-ane change is in the receipt.
+  - **2-bit palettised weights** (`constexpr_lut_to_dense`, LUT {-1, 0, 1}, scale applied after) are fast only as
+    1×1 conv.
+  - **Best:** all 16 layers in one program (pal2conv), **208.6 tok/s** end to end (ANE alone 263), with parity
+    identical to the old decode.
+  - **Single-stream ≥400 is not reachable.** The floor is ~3.65 ms of weight decode (~80 G weights/s), plus ~1 ms
+    host and head.
+  - **But T>1 calls cost the same** (0.41–0.51 ms for 1–64 tokens on the 67 MB probe). So speculative or
+    multi-sequence decode should reach 400+ (extrapolated, not built). This also fits the flywheel: a batched
+    writer, a verifier, and student forwards.
