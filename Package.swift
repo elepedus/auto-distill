@@ -13,6 +13,7 @@ let mlx: [Target.Dependency] = [
 let package = Package(
     name: "auto-distill",
     platforms: [.macOS(.v15)],
+    products: [.library(name: "LFM2ANE", targets: ["LFM2ANE"])],  // used by ../slurp (TTF kernel, SharedBuffer)
     dependencies: [
         .package(path: "/Users/Shared/_Projects/agx/swift-ane"),  // local-only for now
         .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.33.0")),
