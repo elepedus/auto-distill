@@ -27,6 +27,7 @@ let package = Package(
         .executableTarget(name: "population-probe", dependencies: mlx + ["LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
         .executableTarget(name: "ane-train", dependencies: mlx + ["LMLoad", "LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
         .executableTarget(name: "ane-infer", dependencies: mlx + ["LMLoad", "LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
+        .executableTarget(name: "ane-decode-probe", dependencies: mlx + ["LFM2ANE", .product(name: "ANE", package: "swift-ane")]),
         .executableTarget(name: "float-train", dependencies: mlx + ["LMLoad", "LFM2ANE"]),
         .executableTarget(name: "ternary-export", dependencies: mlx + ["LMLoad"]),
         .executableTarget(name: "ternarise", dependencies: mlx + ["LMLoad", "LFM2ANE"]),
