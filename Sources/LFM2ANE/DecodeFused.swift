@@ -11,7 +11,12 @@
 import ANE
 import Foundation
 
-public enum WeightMode: String, Sendable { case input, fp16, pal2 }
+/// pal2conv / fp16conv: the same constants consumed by a 1x1 convolution (x reshaped to [1,K,1,1]) instead of a matmul.
+public enum WeightMode: String, Sendable {
+    case input, fp16, pal2, fp16conv, pal2conv
+    var conv: Bool { self == .fp16conv || self == .pal2conv }
+    var palette: Bool { self == .pal2 || self == .pal2conv }
+}
 
 /// One layer's parameters. Linear names: conv b c x o, attention q k v o (GQA already expanded to 16 heads), then w1 w3 w2.
 public struct LayerData: Sendable {
@@ -73,8 +78,8 @@ public func fusedDecodeProgram(_ s: LFM2Shape, attention: [Bool], maxLength L: I
     switch mode {
     case .input:
         wA = g.input("wA", [1, n, rowsA, D]); wB = g.input("wB", [1, n, D, FF]); sm = g.input("sm", [1, n, fusedSmallRows, FF])
-    case .pal2: lut = g.blobFP16([-1, 0, 1, 0], [1, 1, 1, 1, 4, 1])
-    case .fp16: break
+    case .pal2, .pal2conv: lut = g.blobFP16([-1, 0, 1, 0], [1, 1, 1, 1, 4, 1])
+    case .fp16, .fp16conv: break
     }
     func norm(_ x: V, _ gamma: V, ones: V) -> V {
         let m = g.floor(g.rowMax(g.unary("abs", x)), 0x1p-14), xs = g.binary("real_div", x, m)
@@ -97,12 +102,14 @@ public func fusedDecodeProgram(_ s: LFM2Shape, attention: [Bool], maxLength L: I
             let names = fusedLinearNames(attention: attention[li]), idx = names.firstIndex(of: name)!
             let off = idx < 4 ? idx * D : 4 * D + (idx - 4) * FF
             return g.slice(wA!, begin: [0, li, off, 0], size: [1, 1, out, D])
-        case .fp16: return g.blobFP16(layers![li].trits[name]!.map { Float16($0) }, [1, 1, out, k])
-        case .pal2: return g.lutToDense(indices: g.blob(pack2(layers![li].trits[name]!), element: 10, type: "uint2", shape: [1, 1, out, k]), lut: lut!)
+        case .fp16, .fp16conv: return g.blobFP16(layers![li].trits[name]!.map { Float16($0) }, mode.conv ? [out, k, 1, 1] : [1, 1, out, k])
+        case .pal2, .pal2conv: return g.lutToDense(indices: g.blob(pack2(layers![li].trits[name]!), element: 10, type: "uint2", shape: mode.conv ? [out, k, 1, 1] : [1, 1, out, k]), lut: lut!)
         }
     }
     func linear(_ li: Int, _ x: V, _ name: String, out: Int) -> V {
-        g.mul(g.matmul(x, weight(li, name, out: out, in: x.shape[3]), transposeY: true), small(li, "s_" + name, out))
+        let w = weight(li, name, out: out, in: x.shape[3])
+        let y = mode.conv ? g.reshape(g.conv1x1(g.reshape(x, [1, x.shape[3], 1, 1]), w), [1, 1, 1, out]) : g.matmul(x, w, transposeY: true)
+        return g.mul(y, small(li, "s_" + name, out))
     }
 
     var x = x0, nsPieces: [V] = [], knPieces: [V] = [], vnPieces: [V] = []

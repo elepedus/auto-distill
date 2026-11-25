@@ -9,14 +9,15 @@ let header = "program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-compon
 @MainActor func blobProgram(m: Int, n: Int, kind: String, buildInfo: Bool) throws -> (Program, [String: ExternalInputBinding]) {
     var lines = ["string pt = const()[name = string(\"pt\"), val = string(\"valid\")];", "tensor<int32, [2]> st = const()[name = string(\"st\"), val = tensor<int32, [2]>([1, 1])];",
                  "tensor<int32, [4]> pd = const()[name = string(\"pd\"), val = tensor<int32, [4]>([0, 0, 0, 0])];", "tensor<int32, [2]> dl = const()[name = string(\"dl\"), val = tensor<int32, [2]>([1, 1])];",
-                 "int32 gr = const()[name = string(\"gr\"), val = int32(1)];"]
+                 "int32 gr = const()[name = string(\"gr\"), val = int32(1)];", "bool tf = const()[name = string(\"tf\"), val = bool(false)];", "bool tt = const()[name = string(\"tt\"), val = bool(true)];"]
     var files: [String: Data] = [:]
     let sharedFile = ProcessInfo.processInfo.environment["SHARED"] != nil
     var body = Data(), pos = 64, count = 0
     var acc = ""
     var rng: UInt64 = 12345
     func rnd() -> UInt64 { rng = rng &* 6364136223846793005 &+ 1442695040888963407; return rng >> 33 }
-    let wshape = "[\(n), \(K), 1, 1]"
+    let mm = ProcessInfo.processInfo.environment["MM"] != nil
+    let wshape = mm ? "[1, 1, \(n), \(K)]" : "[\(n), \(K), 1, 1]"
     for i in 0 ..< m {
         func blob(_ name: String, _ type: String, _ shape: String, _ payload: Data, _ el: MILBlob.Element, pad: Int = 0) throws {
             if sharedFile {  // one file, chunk headers at 64-aligned offsets
@@ -58,20 +59,25 @@ let header = "program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-compon
             lines.append("tensor<fp16, \(wshape)> \(wname) = constexpr_blockwise_shift_scale(data = q\(i), scale = s\(i))[name = string(\"\(wname)\")];")
         default: fatalError()
         }
-        lines.append("tensor<fp16, [1, \(n), 1, 1]> y\(i) = conv(dilations = dl, groups = gr, pad = pd, pad_type = pt, strides = st, weight = \(wname), x = x)[name = string(\"y\(i)\")];")
-        if i == 0 { acc = "y0" } else { lines.append("tensor<fp16, [1, \(n), 1, 1]> a\(i) = add(x = \(acc), y = y\(i))[name = string(\"a\(i)\")];"); acc = "a\(i)" }
+        if mm {
+            lines.append("tensor<fp16, [1, 1, 1, \(n)]> y\(i) = matmul(transpose_x = tf, transpose_y = tt, x = x, y = \(wname))[name = string(\"y\(i)\")];")
+        } else {
+            lines.append("tensor<fp16, [1, \(n), 1, 1]> y\(i) = conv(dilations = dl, groups = gr, pad = pd, pad_type = pt, strides = st, weight = \(wname), x = x)[name = string(\"y\(i)\")];")
+        }
+        if i == 0 { acc = "y0" } else { lines.append("tensor<fp16, \(mm ? "[1, 1, 1, \(n)]" : "[1, \(n), 1, 1]")> a\(i) = add(x = \(acc), y = y\(i))[name = string(\"a\(i)\")];"); acc = "a\(i)" }
     }
     if sharedFile {
         var h = Data(count: 64); h[0] = UInt8(count); h[4] = 2
         files["weights/weight.bin"] = h + body
     }
-    lines.append("tensor<fp16, [1, \(n), 1, 1]> y = identity(x = \(acc))[name = string(\"y\")];")
-    let text = (buildInfo ? header : "program(1.3)\n{\n") + "    func main<ios18>(tensor<fp16, [1, \(K), 1, 1]> x) {\n" + lines.map { "        " + $0 }.joined(separator: "\n") + "\n    } -> (y);\n}\n"
-    let x = SharedBuffer([1, K, 1, 1]); fill(x, seed: 1)
-    _ = x; return (try Program(mil: text, weights: files), [:])
+    lines.append("tensor<fp16, \(mm ? "[1, 1, 1, \(n)]" : "[1, \(n), 1, 1]")> y = identity(x = \(acc))[name = string(\"y\")];")
+    let text = (buildInfo ? header : "program(1.3)\n{\n") + "    func main<ios18>(tensor<fp16, \(mm ? "[1, 1, 1, \(K)]" : "[1, \(K), 1, 1]")> x) {\n" + lines.map { "        " + $0 }.joined(separator: "\n") + "\n    } -> (y);\n}\n"
+    
+    return (try Program(mil: text, weights: files), [:])
 }
 
 @MainActor func runBlobs(_ kinds: [String], buildInfos: [Bool] = [true, false], ms: [Int] = [1, 2, 4, 9, 16]) {
+    let mm = ProcessInfo.processInfo.environment["MM"] != nil
     for kind in kinds {
         for m in ms {
             for bi in buildInfos {
@@ -80,7 +86,7 @@ let header = "program(1.3)\n[buildInfo = dict<string, string>({{\"coremlc-compon
                     let t0 = now()
                     let (p, b) = try blobProgram(m: m, n: n, kind: kind, buildInfo: bi)
                     let model = try Model(program: p, configuration: .init(maximumSurfaceBytes: 512 << 20, maximumTotalBytes: 4 << 30), inputBindings: b)
-                    _ = try model.prepareUpdating(inputs: ["x": try Tensor(shape: TensorShape(batches: 1, channels: K, height: 1, width: 1), values: [Float16](repeating: 0.1, count: K))])
+                    _ = try model.prepareUpdating(inputs: ["x": try Tensor(shape: mm ? TensorShape(batches: 1, channels: 1, height: 1, width: K) : TensorShape(batches: 1, channels: K, height: 1, width: 1), values: [Float16](repeating: 0.1, count: K))])
                     let ct = now() - t0
                     let (med, wall) = try time(model)
                     let mb = Double(m * n * K * 2) / 1e6

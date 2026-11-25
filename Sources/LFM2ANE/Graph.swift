@@ -83,6 +83,13 @@ final class MILText {
     func blobFP16(_ values: [Float16], _ shape: [Int]) -> V {
         blob(values.withUnsafeBytes { Data($0) }, element: 1, type: "fp16", shape: shape)
     }
+    private var convConsts: (pad: String, strides: String, pads: String, dilations: String, groups: String)?
+    /// 1x1 convolution: x [1,K,1,1], w [N,K,1,1] -> [1,N,1,1]. On the ANE a constexpr weight takes the native palette path only through conv, not matmul.
+    func conv1x1(_ x: V, _ w: V) -> V {
+        if convConsts == nil { convConsts = (scalar("string", "\"valid\""), ints([1, 1]), ints([0, 0, 0, 0]), ints([1, 1]), scalar("int32", "1")) }
+        let c = convConsts!
+        return op("conv", "dilations = \(c.dilations), groups = \(c.groups), pad = \(c.pads), pad_type = \(c.pad), strides = \(c.strides), weight = \(w.name), x = \(x.name)", [1, w.shape[0], 1, 1])
+    }
     /// Dense fp16 weight from 2-bit indices (4 per byte, little-endian bit order) through one shared 4-entry lookup table.
     func lutToDense(indices: V, lut: V) -> V {
         op("constexpr_lut_to_dense", "indices = \(indices.name), lut = \(lut.name)", indices.shape)
